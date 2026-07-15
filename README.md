@@ -2,6 +2,8 @@
 
 OCDX is a typed SDK and mod loader for extending the production OpenCode Desktop V2 interface without patching the installed app.
 
+https://github.com/user-attachments/assets/b3a3bb6b-0c29-4d10-8f3e-bc8941aa9b59
+
 ```ts
 import { defineExtension } from "@hona/ocdx";
 
