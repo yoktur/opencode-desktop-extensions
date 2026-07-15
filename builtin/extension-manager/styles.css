@@ -1,0 +1,78 @@
+.ocdx-manager-body {
+  gap: 32px;
+}
+
+.ocdx-manager-install {
+  gap: 14px;
+}
+
+.ocdx-manager-drop {
+  display: flex;
+  min-height: 84px;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
+  transition: 120ms ease-out;
+}
+
+.ocdx-manager-drop[data-dragging="true"] {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+  box-shadow: inset 0 0 0 1px var(--v2-border-border-focus);
+}
+
+.ocdx-manager-drop > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ocdx-manager-drop strong {
+  color: var(--v2-text-text-base);
+  font-size: 13px;
+  font-weight: 590;
+}
+
+.ocdx-manager-drop span,
+.ocdx-manager-empty {
+  color: var(--v2-text-text-muted);
+  font-size: 13px;
+}
+
+.ocdx-manager-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocdx-manager-url [data-component="text-input-v2"] {
+  min-width: 0;
+  flex: 1;
+}
+
+.ocdx-manager-method-label {
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ocdx-manager-error {
+  color: var(--v2-state-fg-danger);
+  font-size: 13px;
+}
+
+.ocdx-manager-extension-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocdx-manager-empty {
+  padding: 20px;
+}

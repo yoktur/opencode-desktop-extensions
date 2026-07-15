@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "vertical-tabs",
+  "name": "Vertical Tabs",
+  "version": "1.0.0",
+  "entry": "renderer.js"
+}

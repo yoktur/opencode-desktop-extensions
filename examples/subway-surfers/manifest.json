@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "subway-surfers",
+  "name": "Subway Surfers",
+  "version": "1.0.0",
+  "entry": "renderer.js"
+}

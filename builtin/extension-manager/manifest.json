@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "ocdx.extension-manager",
+  "name": "Extensions",
+  "version": "1.0.0",
+  "entry": "renderer.js"
+}

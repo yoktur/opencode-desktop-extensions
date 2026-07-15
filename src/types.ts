@@ -1,0 +1,253 @@
+import type { IconProps } from "@opencode-ai/ui/v2/icon";
+import type { OpencodeClient } from "@opencode-ai/sdk/client";
+import type { JSX } from "solid-js";
+
+export type Dispose = () => void;
+
+export interface MountContext {
+  signal: AbortSignal;
+}
+
+export type Mount = (
+  target: HTMLElement,
+  context: MountContext,
+) => void | Dispose;
+
+export interface Cell<T> {
+  get(): T;
+  set(value: T | ((current: T) => T)): void;
+  subscribe(listener: (value: T) => void): Dispose;
+}
+
+export interface StateValueOptions<T> {
+  default: T;
+  decode(value: unknown): T | undefined;
+}
+
+export interface ExtensionState {
+  boolean(key: string, defaultValue: boolean): Cell<boolean>;
+  number(
+    key: string,
+    defaultValue: number,
+    options?: { min?: number; max?: number },
+  ): Cell<number>;
+  string(key: string, defaultValue: string): Cell<string>;
+  value<T>(key: string, options: StateValueOptions<T>): Cell<T>;
+}
+
+export interface ExtensionLifecycle {
+  signal: AbortSignal;
+  own(dispose: Dispose): Dispose;
+  listen(
+    target: EventTarget,
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: AddEventListenerOptions | boolean,
+  ): Dispose;
+  observe(
+    target: Node,
+    options: MutationObserverInit,
+    callback: MutationCallback,
+  ): Dispose;
+}
+
+export interface ExtensionAssets {
+  url(path: string): string;
+  fetch(path: string, init?: RequestInit): Promise<Response>;
+}
+
+export interface SurfaceContribution {
+  id: string;
+  order?: number;
+  mount: Mount;
+}
+
+export interface SettingsContribution extends SurfaceContribution {
+  anchor?: string;
+  placement?: "before" | "after";
+}
+
+export interface SettingsPageContribution {
+  id: string;
+  after?: string;
+  navigation: Mount;
+  mount: Mount;
+}
+
+export type PaneSide = "left" | "right" | "top" | "bottom";
+
+export interface PaneOptions extends SurfaceContribution {
+  side: PaneSide;
+  size: number;
+  minSize?: number;
+  maxSize?: number;
+  open?: boolean;
+  resizable?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onSizeChange?: (size: number) => void;
+}
+
+export interface PaneController {
+  open(): boolean;
+  size(): number;
+  show(): void;
+  hide(): void;
+  toggle(): void;
+  resize(size: number): void;
+  dispose(): void;
+}
+
+export interface UnsafeDesktopSurfaces {
+  titlebar: {
+    add(contribution: SurfaceContribution): Dispose;
+  };
+  settings: {
+    add(contribution: SettingsContribution): Dispose;
+    addPage(contribution: SettingsPageContribution): Dispose;
+  };
+  layout: {
+    addPane(options: PaneOptions): PaneController;
+  };
+  review: {
+    addPane(options: PaneOptions): PaneController;
+  };
+}
+
+export type DesktopIcon = IconProps["name"] | (() => JSX.Element);
+
+export interface DesktopTitlebar {
+  action(options: {
+    id: string;
+    label: string;
+    icon: DesktopIcon;
+    order?: number;
+    onPress(): void;
+  }): Dispose;
+  toggle(options: {
+    id: string;
+    label: string;
+    icon: DesktopIcon;
+    checked: Cell<boolean>;
+    order?: number;
+  }): Dispose;
+}
+
+export interface DesktopSettings {
+  toggle(options: {
+    id: string;
+    title: string;
+    description?: string;
+    value: Cell<boolean>;
+    after: "new-layout";
+    badge?: string;
+  }): Dispose;
+  page(options: {
+    id: string;
+    title: string;
+    icon: DesktopIcon;
+    after?: "general" | "shortcuts";
+    mount: Mount;
+  }): Dispose;
+}
+
+export interface DesktopPane {
+  open: Cell<boolean>;
+  size: Cell<number>;
+  show(): void;
+  hide(): void;
+  toggle(): void;
+  dispose(): void;
+}
+
+export interface DesktopPanes {
+  add(options: {
+    id: string;
+    surface?: "app" | "review";
+    side: PaneSide;
+    size: number | Cell<number>;
+    open?: boolean | Cell<boolean>;
+    minSize?: number;
+    maxSize?: number;
+    resizable?: boolean;
+    mount: Mount;
+  }): DesktopPane;
+}
+
+export interface DesktopTab {
+  id: string;
+  title: string;
+  active: boolean;
+  href?: string;
+  session?: {
+    id: string;
+    server: string;
+  };
+}
+
+export interface DesktopTabs {
+  snapshot(): readonly DesktopTab[];
+  subscribe(listener: (tabs: readonly DesktopTab[]) => void): Dispose;
+  activate(id: string): boolean;
+  close(id: string): boolean;
+  create(): boolean;
+  avatar(id: string): DocumentFragment | undefined;
+}
+
+export interface OpenCodeDesktop {
+  titlebar: DesktopTitlebar;
+  settings: DesktopSettings;
+  panes: DesktopPanes;
+  tabs: DesktopTabs;
+}
+
+export interface OpenCodeConnection {
+  key: string;
+  url: string;
+  username?: string;
+  password?: string;
+}
+
+export interface OpenCodeSessionContext {
+  id: string;
+  server: string;
+}
+
+export interface OpenCodeSDK {
+  currentSession: Cell<OpenCodeSessionContext | undefined>;
+  connection(server?: string): Promise<OpenCodeConnection>;
+  client(options?: {
+    server?: string;
+    directory?: string;
+  }): Promise<OpencodeClient>;
+}
+
+export interface ExtensionContext {
+  id: string;
+  lifecycle: ExtensionLifecycle;
+  assets: ExtensionAssets;
+  state: ExtensionState;
+  opencode: OpenCodeSDK;
+  desktop: OpenCodeDesktop;
+  unsafe: UnsafeDesktopSurfaces;
+}
+
+export interface ExtensionSource {
+  styles?: string | readonly string[];
+  activate(context: ExtensionContext): void | Dispose;
+}
+
+export interface ExtensionDefinition extends ExtensionSource {
+  id: string;
+  name: string;
+}
+
+export interface ExtensionHost {
+  register(extension: ExtensionDefinition): Dispose;
+  dispose(): void;
+}
+
+export interface ExtensionHostOptions {
+  document?: Document;
+  storage?: Storage;
+  onError?: (error: unknown, extensionID: string) => void;
+}
