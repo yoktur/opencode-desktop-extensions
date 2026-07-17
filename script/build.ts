@@ -68,7 +68,15 @@ async function buildExtension(
   await writer.add("renderer.js", new TextReader(renderer));
   if (main) await writer.add("main.cjs", new TextReader(main));
   for (const asset of assets) {
-    await writer.add(asset, new BlobReader(Bun.file(`${directory}/${asset}`)), {
+    const file = Bun.file(`${directory}/${asset}`);
+    if (
+      (await file.slice(0, 128).text()).startsWith(
+        "version https://git-lfs.github.com/spec/v1",
+      )
+    ) {
+      throw new Error(`Git LFS asset is missing: ${directory}/${asset}`);
+    }
+    await writer.add(asset, new BlobReader(file), {
       level: 0,
     });
   }

@@ -76,10 +76,12 @@ Requirements:
 
 - Windows or macOS with the production OpenCode Desktop app installed
 - [Bun](https://bun.sh)
+- [Git LFS](https://git-lfs.com/) for example assets
 - Stable Rust and platform build tools (MSVC on Windows, Xcode Command Line Tools on macOS)
 
 ```sh
 bun install
+git lfs pull
 bun run build:all
 bun run launch
 ```
