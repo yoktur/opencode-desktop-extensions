@@ -60,7 +60,7 @@ export function createDesktop(
                   size="large"
                   class="!w-9 shrink-0"
                   state={checked() ? "pressed" : undefined}
-                  icon={icon(options.icon)}
+                  icon={options.icon(checked())}
                   onClick={() => options.checked.set((value) => !value)}
                   aria-label={options.label}
                   aria-pressed={checked()}
@@ -76,7 +76,7 @@ export function createDesktop(
         return surfaces.settings.add({
           id: options.id,
           anchor:
-            '[data-component="settings-v2-row"]:has([data-action="settings-new-layout-designs"])',
+            '[data-component="settings-v2-row"]:has([data-action="settings-new-layout-designs"]), [data-component="settings-v2-row"]:has([data-action="settings-show-file-tree"])',
           placement: "after",
           mount: (target) =>
             render(() => {
@@ -96,6 +96,7 @@ export function createDesktop(
                     <Switch
                       checked={value()}
                       onChange={(checked) => options.value.set(checked)}
+                      hideLabel
                     >
                       {options.title}
                     </Switch>
@@ -114,7 +115,7 @@ export function createDesktop(
               () => (
                 <>
                   {icon(options.icon)}
-                  <span>{options.title}</span>
+                  {options.title}
                 </>
               ),
               target,

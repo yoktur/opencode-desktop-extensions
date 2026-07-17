@@ -19,6 +19,7 @@ await build({
     lib: {
       entry: {
         index: "src/index.ts",
+        main: "src/main.ts",
         solid: "src/solid.tsx",
       },
       formats: ["es"],
@@ -36,6 +37,7 @@ await Bun.write(
 await buildExtension("builtin/extension-manager", [], "dist/builtin");
 await buildExtension("examples/subway-surfers", ["assets/subway-surfers.webm"]);
 await buildExtension("examples/vertical-tabs", []);
+await buildExtension("examples/keep-awake", []);
 await rm("dist/.entries", { recursive: true, force: true });
 
 async function buildExtension(
@@ -47,12 +49,16 @@ async function buildExtension(
   if (
     manifest.schema !== 1 ||
     !manifest.id ||
-    manifest.entry !== "renderer.js"
+    manifest.entry !== "renderer.js" ||
+    (manifest.main !== undefined && manifest.main !== "main.cjs")
   ) {
     throw new Error(`Invalid extension manifest: ${directory}/manifest.json`);
   }
 
   const renderer = await bundleExtension(directory, manifest);
+  const main = manifest.main
+    ? await bundleMainExtension(directory, manifest)
+    : undefined;
 
   const writer = new ZipWriter(new BlobWriter("application/vnd.ocdx"));
   await writer.add(
@@ -60,6 +66,7 @@ async function buildExtension(
     new TextReader(JSON.stringify(manifest, null, 2)),
   );
   await writer.add("renderer.js", new TextReader(renderer));
+  if (main) await writer.add("main.cjs", new TextReader(main));
   for (const asset of assets) {
     await writer.add(asset, new BlobReader(Bun.file(`${directory}/${asset}`)), {
       level: 0,
@@ -117,4 +124,40 @@ async function bundleExtension(
     `,
   );
   return bundle(entry, "OCDXExtension");
+}
+
+async function bundleMainExtension(
+  directory: string,
+  manifest: { id: string },
+) {
+  const source = resolve(`${directory}/main.ts`).replaceAll("\\", "/");
+  const result = await build({
+    configFile: false,
+    build: {
+      target: "node22",
+      write: false,
+      lib: {
+        entry: source,
+        formats: ["cjs"],
+        fileName: () => "main.cjs",
+      },
+      rollupOptions: {
+        external: ["electron"],
+        output: {
+          exports: "named",
+          inlineDynamicImports: true,
+        },
+      },
+    },
+  });
+  const outputs = (Array.isArray(result) ? result : [result]).flatMap(
+    (value) => ("output" in value ? value.output : []),
+  );
+  const main = outputs.find(
+    (value) => value.type === "chunk" && value.fileName === "main.cjs",
+  );
+  if (!main || main.type !== "chunk") {
+    throw new Error(`Vite did not bundle the main entry for ${manifest.id}`);
+  }
+  return main.code;
 }

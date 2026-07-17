@@ -56,6 +56,32 @@ export interface ExtensionAssets {
   fetch(path: string, init?: RequestInit): Promise<Response>;
 }
 
+export type MainExtensionMethods = Record<
+  string,
+  (...args: any[]) => unknown
+>;
+
+export interface MainExtensionDefinition<
+  TMethods extends MainExtensionMethods = MainExtensionMethods,
+> {
+  activate(context: MainExtensionContext): TMethods;
+}
+
+export type MainExtensionClient<TDefinition> =
+  TDefinition extends MainExtensionDefinition<infer TMethods>
+    ? {
+        [TKey in keyof TMethods]: TMethods[TKey] extends (
+          ...args: infer TArguments
+        ) => infer TResult
+          ? (...args: TArguments) => Promise<Awaited<TResult>>
+          : never;
+      }
+    : never;
+
+export interface ExtensionMainBridge {
+  <TDefinition extends MainExtensionDefinition>(): MainExtensionClient<TDefinition>;
+}
+
 export interface SurfaceContribution {
   id: string;
   order?: number;
@@ -126,7 +152,7 @@ export interface DesktopTitlebar {
   toggle(options: {
     id: string;
     label: string;
-    icon: DesktopIcon;
+    icon(checked: boolean): JSX.Element;
     checked: Cell<boolean>;
     order?: number;
   }): Dispose;
@@ -138,7 +164,6 @@ export interface DesktopSettings {
     title: string;
     description?: string;
     value: Cell<boolean>;
-    after: "new-layout";
     badge?: string;
   }): Dispose;
   page(options: {
@@ -225,6 +250,7 @@ export interface ExtensionContext {
   id: string;
   lifecycle: ExtensionLifecycle;
   assets: ExtensionAssets;
+  main: ExtensionMainBridge;
   state: ExtensionState;
   opencode: OpenCodeSDK;
   desktop: OpenCodeDesktop;
@@ -239,6 +265,16 @@ export interface ExtensionSource {
 export interface ExtensionDefinition extends ExtensionSource {
   id: string;
   name: string;
+}
+
+export interface MainExtensionLifecycle {
+  signal: AbortSignal;
+  own(dispose: Dispose): Dispose;
+}
+
+export interface MainExtensionContext {
+  id: string;
+  lifecycle: MainExtensionLifecycle;
 }
 
 export interface ExtensionHost {

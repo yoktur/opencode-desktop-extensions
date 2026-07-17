@@ -6,6 +6,7 @@ const { app, net, protocol, utilityProcess, webContents } = require("electron")
 const runtimePath = process.env.MODLOADER_MOD_ENTRYPOINT
 const extensions = JSON.parse(process.env.OCDX_EXTENSIONS || "[]")
 const roots = new Map(extensions.map((extension) => [extension.id, extension.root]))
+const mainExtensions = new Map()
 const modsDirectory = process.env.OCDX_MODS_DIR
 const configPath = process.env.OCDX_CONFIG
 const runtime = fs.readFileSync(runtimePath, "utf8")
@@ -15,6 +16,14 @@ const log = (message) => {
 }
 log(`bootstrap started in pid ${process.pid}`)
 log(`extensions discovered: ${extensions.length}`)
+const signalReady = () => {
+  if (!process.env.MODLOADER_READY_FILE) return
+  try {
+    fs.writeFileSync(process.env.MODLOADER_READY_FILE, String(process.pid))
+  } catch (error) {
+    log(`failed to signal bootstrap readiness: ${error}`)
+  }
+}
 
 const registerSchemes = protocol.registerSchemesAsPrivileged
 let schemesRegistered = false
@@ -41,6 +50,7 @@ void app.whenReady().then(() => {
   protocol.handle("ocdx", async (request) => {
     const url = new URL(request.url)
     if (url.host === "manager") return handleManagerRequest(request, url)
+    if (url.host === "main") return handleMainRequest(request, url)
     const parts = url.pathname.split("/").filter(Boolean)
     if (url.host !== "mods" || parts.length < 2) return new Response("Not found", { status: 404 })
     const root = roots.get(parts.shift())
@@ -55,6 +65,19 @@ void app.whenReady().then(() => {
       headers: range ? { Range: range } : undefined,
     })
   })
+  for (const extension of extensions) {
+    if (!extension.enabled || !extension.main) continue
+    try {
+      activateMainExtension(extension)
+    } catch (error) {
+      log(`main extension failed: ${extension.id}: ${error.stack || error}`)
+      console.error(`[ocdx:${extension.id}:main]`, error)
+    }
+  }
+})
+
+app.once("will-quit", () => {
+  for (const extensionID of [...mainExtensions.keys()]) disposeMainExtension(extensionID)
 })
 
 // OpenCode's utility process is not hooked, so translate the virtual original ASAR path back to disk.
@@ -114,10 +137,102 @@ async function inject(contents) {
   }
 }
 
+function activateMainExtension(extension) {
+  disposeMainExtension(extension.id)
+  if (!extension.main) return
+
+  const controller = new AbortController()
+  const owned = [() => controller.abort()]
+  const resolved = require.resolve(extension.main)
+  delete require.cache[resolved]
+  const loaded = require(resolved)
+  const source = loaded?.default ?? loaded
+  if (!source || typeof source.activate !== "function") {
+    delete require.cache[resolved]
+    throw new Error("Main extension must export an activate function")
+  }
+
+  const record = { methods: new Map(), resolved, dispose: undefined }
+  const own = (dispose) => {
+    if (typeof dispose !== "function") throw new TypeError("Main extension disposer must be a function")
+    owned.push(dispose)
+    return () => {
+      const index = owned.indexOf(dispose)
+      if (index !== -1) owned.splice(index, 1)
+      dispose()
+    }
+  }
+  const cleanup = () => {
+    record.methods.clear()
+    for (const dispose of owned.reverse()) {
+      try {
+        dispose()
+      } catch (error) {
+        log(`main extension cleanup failed: ${extension.id}: ${error.stack || error}`)
+      }
+    }
+    owned.length = 0
+    delete require.cache[resolved]
+  }
+
+  try {
+    const methods = source.activate({
+      id: extension.id,
+      lifecycle: { signal: controller.signal, own },
+    })
+    if (!methods || typeof methods !== "object" || Array.isArray(methods)) {
+      throw new TypeError("Main extension activate must return a method object")
+    }
+    for (const [name, method] of Object.entries(methods)) {
+      if (name === "then" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(name)) {
+        throw new Error(`Invalid main extension method: ${name}`)
+      }
+      if (typeof method !== "function") {
+        throw new TypeError(`Main extension method must be a function: ${name}`)
+      }
+      record.methods.set(name, method)
+    }
+    record.dispose = cleanup
+    mainExtensions.set(extension.id, record)
+    log(`main extension loaded: ${extension.id}@${extension.version}`)
+  } catch (error) {
+    cleanup()
+    throw error
+  }
+}
+
+function disposeMainExtension(extensionID) {
+  const record = mainExtensions.get(extensionID)
+  if (!record) return
+  mainExtensions.delete(extensionID)
+  record.dispose()
+}
+
+async function handleMainRequest(request, url) {
+  if (request.method === "OPTIONS") return json({ ok: true })
+  try {
+    const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent)
+    if (request.method !== "POST" || parts.length !== 2) {
+      return json({ error: "Main extension method not found" }, 404)
+    }
+    const [extensionID, methodName] = parts
+    const input = await request.json()
+    if (!input || !Array.isArray(input.args)) {
+      return json({ error: "Main extension arguments must be an array" }, 400)
+    }
+    const method = mainExtensions.get(extensionID)?.methods.get(methodName)
+    if (!method) return json({ error: "Main extension method not found" }, 404)
+    return json({ value: await method(...input.args) })
+  } catch (error) {
+    log(`main extension request failed: ${error.stack || error}`)
+    return json({ error: error instanceof Error ? error.message : String(error) }, 500)
+  }
+}
+
 async function handleManagerRequest(request, url) {
   if (request.method === "OPTIONS") return json({ ok: true })
   if (request.method === "GET" && url.pathname === "/extensions") {
-    return json({ extensions })
+    return json({ extensions: extensions.map(extensionInfo) })
   }
   if (request.method === "POST" && url.pathname === "/install") {
     const bytes = Buffer.from(await request.arrayBuffer())
@@ -159,20 +274,26 @@ async function handleManagerRequest(request, url) {
   return json({ error: "Not found" }, 404)
 }
 
+function extensionInfo({ id, name, version, enabled, builtin, main }) {
+  return { id, name, version, enabled, builtin, hasMain: Boolean(main) }
+}
+
 async function setExtensionEnabled(extension, enabled) {
   const targets = webContents
     .getAllWebContents()
     .filter((contents) => !contents.isDestroyed() && contents.getURL().startsWith("oc://renderer/"))
   if (!enabled) {
     const id = JSON.stringify(extension.id)
-    await Promise.all(
+    await Promise.allSettled(
       targets.map((contents) => contents.executeJavaScript(`globalThis.__ocdx?.disable(${id})`, true)),
     )
+    disposeMainExtension(extension.id)
     return
   }
 
-  const source = fs.readFileSync(extension.entry, "utf8")
+  activateMainExtension(extension)
   try {
+    const source = fs.readFileSync(extension.entry, "utf8")
     await Promise.all(
       targets.map((contents) =>
         contents.executeJavaScript(
@@ -186,6 +307,7 @@ async function setExtensionEnabled(extension, enabled) {
     await Promise.allSettled(
       targets.map((contents) => contents.executeJavaScript(`globalThis.__ocdx?.disable(${id})`, true)),
     )
+    disposeMainExtension(extension.id)
     throw error
   }
 }
@@ -201,26 +323,65 @@ async function installArchive(name, bytes) {
     .replace(/\.ocdx$/i, "")
   const target = path.join(modsDirectory, `${filename || `extension-${Date.now()}`}.ocdx`)
   const temporary = `${target}.${process.pid}.tmp`
+  const backup = `${target}.${process.pid}.bak`
   fs.mkdirSync(modsDirectory, { recursive: true })
+  fs.rmSync(temporary, { force: true })
+  fs.rmSync(backup, { force: true })
   fs.writeFileSync(temporary, bytes)
-  fs.rmSync(target, { force: true })
-  fs.renameSync(temporary, target)
+  let extension
+  let existing
+  let existingWasEnabled = false
+  let activated = false
+  let committed = false
+  let previousRoot
+  let rootStaged = false
   try {
-    const extension = await loadArchive(target)
-    const existing = extensions.find((item) => item.id === extension.id)
+    extension = await loadArchive(temporary)
+    if (extension.main) {
+      throw new Error("Main-process extensions must be installed from the mods directory and require a restart")
+    }
+    existing = extensions.find((item) => item.id === extension.id)
     if (existing?.builtin) throw new Error("Extension ID is reserved by a built-in extension")
-    if (existing?.enabled) await setExtensionEnabled(existing, false)
-    const index = extensions.findIndex((item) => item.id === extension.id)
-    if (index === -1) extensions.push(extension)
-    else extensions.splice(index, 1, extension)
+    existingWasEnabled = Boolean(existing?.enabled)
+    if (existingWasEnabled) await setExtensionEnabled(existing, false)
+    previousRoot = roots.get(extension.id)
     roots.set(extension.id, extension.root)
+    rootStaged = true
     await setExtensionEnabled(extension, true)
+    activated = true
+
+    if (fs.existsSync(target)) fs.renameSync(target, backup)
+    try {
+      fs.renameSync(temporary, target)
+      committed = true
+    } catch (error) {
+      if (fs.existsSync(backup)) fs.renameSync(backup, target)
+      throw error
+    }
+    extension.archive = target
+
     const config = readConfig()
     config.disabled = config.disabled.filter((id) => id !== extension.id)
     writeConfig(config)
-    return json({ ok: true, extension, filename: path.basename(target) })
+    const index = extensions.findIndex((item) => item.id === extension.id)
+    if (index === -1) extensions.push(extension)
+    else extensions.splice(index, 1, extension)
+    if (existing?.managed && existing.archive !== target) fs.rmSync(existing.archive, { force: true })
+    fs.rmSync(backup, { force: true })
+    return json({ ok: true, extension: extensionInfo(extension), filename: path.basename(target) })
   } catch (error) {
-    fs.rmSync(target, { force: true })
+    if (activated && extension) await setExtensionEnabled(extension, false).catch(() => undefined)
+    if (rootStaged && extension) {
+      if (previousRoot) roots.set(extension.id, previousRoot)
+      else roots.delete(extension.id)
+    }
+    if (existingWasEnabled && existing) await setExtensionEnabled(existing, true).catch(() => undefined)
+    if (committed) {
+      fs.rmSync(target, { force: true })
+      if (fs.existsSync(backup)) fs.renameSync(backup, target)
+    }
+    fs.rmSync(temporary, { force: true })
+    fs.rmSync(backup, { force: true })
     return json({ error: error instanceof Error ? error.message : String(error) }, 400)
   }
 }
@@ -241,6 +402,9 @@ async function loadArchive(archivePath) {
   if (!entries.some((entry) => entry.filename === manifest.entry && !entry.directory)) {
     throw new Error(`Entry is missing: ${manifest.entry}`)
   }
+  if (manifest.main && !entries.some((entry) => entry.filename === manifest.main && !entry.directory)) {
+    throw new Error(`Main entry is missing: ${manifest.main}`)
+  }
 
   let total = 0
   for (const entry of entries) {
@@ -256,7 +420,10 @@ async function loadArchive(archivePath) {
     manifest.id,
     `${manifest.version}-${metadata.size}-${Math.trunc(metadata.mtimeMs)}`,
   )
-  if (!fs.existsSync(path.join(root, manifest.entry))) {
+  if (
+    !fs.existsSync(path.join(root, manifest.entry)) ||
+    (manifest.main && !fs.existsSync(path.join(root, manifest.main)))
+  ) {
     const temporary = `${root}.${process.pid}.tmp`
     fs.rmSync(temporary, { recursive: true, force: true })
     for (const entry of entries) {
@@ -278,9 +445,12 @@ async function loadArchive(archivePath) {
     name: manifest.name,
     version: manifest.version,
     entry: path.join(root, manifest.entry),
+    main: manifest.main ? path.join(root, manifest.main) : undefined,
     root,
+    archive: archivePath,
     enabled: true,
     builtin: false,
+    managed: true,
   }
 }
 
@@ -290,7 +460,11 @@ function validateManifest(manifest) {
   if (!String(manifest.name || "").trim() || !String(manifest.version || "").trim()) {
     throw new Error("Extension name and version are required")
   }
+  if (!/^[a-zA-Z0-9._+-]+$/.test(manifest.version)) {
+    throw new Error("Extension version contains unsupported characters")
+  }
   validateArchivePath(manifest.entry)
+  if (manifest.main !== undefined) validateArchivePath(manifest.main)
 }
 
 function validateArchivePath(value) {
@@ -336,8 +510,10 @@ const originalAsar = path.resolve(__dirname, process.env.MODLOADER_ORIGINAL_ASAR
 const originalPackage = JSON.parse(fs.readFileSync(path.join(originalAsar, "package.json"), "utf8"))
 const originalMain = path.resolve(originalAsar, originalPackage.main)
 
-void import(pathToFileURL(originalMain).href).catch((error) => {
-  log(`OpenCode startup failed: ${error.stack || error}`)
-  console.error("[ocdx] OpenCode startup failed", error)
-  app.exit(1)
-})
+void import(pathToFileURL(originalMain).href)
+  .then(signalReady)
+  .catch((error) => {
+    log(`OpenCode startup failed: ${error.stack || error}`)
+    console.error("[ocdx] OpenCode startup failed", error)
+    app.exit(1)
+  })

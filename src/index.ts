@@ -21,6 +21,7 @@ export type {
   ExtensionDefinition,
   ExtensionSource,
   ExtensionLifecycle,
+  ExtensionMainBridge,
   ExtensionState,
   Mount,
   OpenCodeConnection,

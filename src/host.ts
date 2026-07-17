@@ -1,4 +1,5 @@
 import { createDesktop } from "./desktop";
+import { createExtensionMainBridge } from "./bridge";
 import { createOpenCodeSDK } from "./opencode";
 import { createExtensionState } from "./state";
 import type {
@@ -74,6 +75,10 @@ const STYLE = `
 
 [data-opencode-mod-surface="titlebar"],
 [data-opencode-mod-surface="settings"] { display: contents; }
+
+[data-opencode-mod-surface="settings"]:not(:last-child) > [data-component="settings-v2-row"] {
+  border-bottom: 0.5px solid var(--v2-border-border-base);
+}
 
 [data-opencode-mod-review-rail] {
   position: absolute;
@@ -480,13 +485,18 @@ export function createExtensionHost(
 
       const navigation = doc.createElement("div");
       navigation.dataset.slot = "tabs-v2-trigger-wrapper";
-      navigation.dataset.value = `ocdx-${record.id}`;
+      const value = `ocdx-${record.id}`;
+      navigation.dataset.value = value;
       const button = doc.createElement("button");
       button.type = "button";
+      button.id = `${value}-trigger`;
       button.dataset.slot = "tabs-v2-trigger";
-      button.dataset.value = `ocdx-${record.id}`;
+      button.dataset.value = value;
+      button.dataset.key = value;
+      button.dataset.orientation = "vertical";
       button.setAttribute("role", "tab");
       button.setAttribute("aria-selected", "false");
+      button.tabIndex = -1;
       const navigationContent = doc.createElement("span");
       navigationContent.dataset.slot = "tabs-v2-trigger-content";
       navigationContent.className = "inline-flex items-center gap-2";
@@ -500,15 +510,20 @@ export function createExtensionHost(
       else list.append(navigation);
 
       const panel = doc.createElement("div");
+      panel.id = `${value}-content`;
       panel.className = "settings-v2-panel";
       panel.dataset.ocdxSettingsPage = record.id;
       panel.hidden = true;
       panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", button.id);
+      button.setAttribute("aria-controls", panel.id);
       tabs.append(panel);
 
       const hide = () => {
         delete button.dataset.selected;
+        delete button.dataset.highlighted;
         button.setAttribute("aria-selected", "false");
+        button.tabIndex = -1;
         panel.hidden = true;
         tabs
           .querySelectorAll<HTMLElement>('[data-slot="tabs-v2-content"]')
@@ -517,14 +532,21 @@ export function createExtensionHost(
       const show = () => {
         tabs
           .querySelectorAll<HTMLElement>(
-            '[data-slot="tabs-v2-trigger"][data-selected]',
+            '[data-slot="tabs-v2-trigger"]',
           )
-          .forEach((trigger) => trigger.removeAttribute("data-selected"));
+          .forEach((trigger) => {
+            trigger.removeAttribute("data-selected");
+            trigger.removeAttribute("data-highlighted");
+            trigger.setAttribute("aria-selected", "false");
+            trigger.tabIndex = -1;
+          });
         tabs
           .querySelectorAll<HTMLElement>('[data-slot="tabs-v2-content"]')
           .forEach((content) => content.style.setProperty("display", "none"));
         button.dataset.selected = "";
+        button.dataset.highlighted = "";
         button.setAttribute("aria-selected", "true");
+        button.tabIndex = 0;
         panel.hidden = false;
       };
       const onTabsClick = (event: MouseEvent) => {
@@ -534,6 +556,10 @@ export function createExtensionHost(
             : undefined;
         if (!trigger || trigger === button) return;
         hide();
+        trigger.setAttribute("data-selected", "");
+        trigger.setAttribute("data-highlighted", "");
+        trigger.setAttribute("aria-selected", "true");
+        (trigger as HTMLElement).tabIndex = 0;
       };
       button.addEventListener("click", show);
       tabs.addEventListener("click", onTabsClick);
@@ -813,6 +839,7 @@ export function createExtensionHost(
       id: extension.id,
       lifecycle,
       assets,
+      main: createExtensionMainBridge(extension.id, controller.signal),
       state: createExtensionState(storage, extension.id),
       opencode: createOpenCodeSDK(desktop, own),
       desktop,

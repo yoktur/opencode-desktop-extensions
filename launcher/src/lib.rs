@@ -23,6 +23,8 @@ struct ExtensionManifest {
     name: String,
     version: String,
     entry: String,
+    #[serde(default)]
+    main: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,9 +33,13 @@ pub struct LoadedExtension {
     name: String,
     version: String,
     entry: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    main: Option<PathBuf>,
     root: PathBuf,
+    archive: PathBuf,
     enabled: bool,
     builtin: bool,
+    managed: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -81,18 +87,18 @@ pub fn parse_args() -> Result<LaunchOptions, String> {
 }
 
 pub fn production_executable(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
-    let executable = explicit
-        .or_else(default_executable)
-        .ok_or("OpenCode production desktop installation was not found")?;
+    let executable = match explicit {
+        Some(path) => executable_from_input(path)?,
+        None => {
+            default_executable().ok_or("OpenCode production desktop installation was not found")?
+        }
+    };
     let executable = normalize_path(
         executable
             .canonicalize()
             .map_err(|error| format!("cannot resolve {}: {error}", executable.display()))?,
     );
-    let resources = executable
-        .parent()
-        .ok_or("OpenCode executable has no parent directory")?
-        .join("resources");
+    let resources = resources_directory(&executable)?;
 
     if !resources.join("app.asar").is_file() || !resources.join("app-update.yml").is_file() {
         return Err(format!(
@@ -131,6 +137,8 @@ pub fn hook_library() -> Result<PathBuf, String> {
     let library = directory.join("ocdx_launcher.dll");
     #[cfg(target_os = "linux")]
     let library = directory.join("libocdx_launcher.so");
+    #[cfg(target_os = "macos")]
+    let library = directory.join("libocdx_launcher.dylib");
 
     if library.is_file() {
         return library
@@ -174,10 +182,10 @@ pub fn discover_extensions() -> (Vec<LoadedExtension>, Vec<String>, PathBuf, Pat
     let mut selected = BTreeMap::new();
     let directories = builtin
         .into_iter()
-        .map(|directory| (directory, true))
-        .chain(portable.into_iter().map(|directory| (directory, false)))
-        .chain([(user.clone(), false)]);
-    for (directory, builtin) in directories {
+        .map(|directory| (directory, true, false))
+        .chain(portable.into_iter().map(|directory| (directory, false, false)))
+        .chain([(user.clone(), false, true)]);
+    for (directory, builtin, managed) in directories {
         let Ok(entries) = fs::read_dir(&directory) else {
             continue;
         };
@@ -195,6 +203,7 @@ pub fn discover_extensions() -> (Vec<LoadedExtension>, Vec<String>, PathBuf, Pat
             match load_extension(&archive, &cache) {
                 Ok(mut extension) => {
                     extension.builtin = builtin;
+                    extension.managed = managed;
                     extension.enabled = builtin || !config.disabled.contains(&extension.id);
                     if selected
                         .get(&extension.id)
@@ -240,6 +249,11 @@ fn load_extension(path: &Path, cache: &Path) -> Result<LoadedExtension, String> 
     archive
         .by_name(&manifest.entry)
         .map_err(|_| format!("entry is missing: {}", manifest.entry))?;
+    if let Some(main) = &manifest.main {
+        archive
+            .by_name(main)
+            .map_err(|_| format!("main entry is missing: {main}"))?;
+    }
 
     let mut total = 0_u64;
     for index in 0..archive.len() {
@@ -269,7 +283,12 @@ fn load_extension(path: &Path, cache: &Path) -> Result<LoadedExtension, String> 
         manifest.version,
         metadata.len()
     ));
-    if !root.join(&manifest.entry).is_file() {
+    if !root.join(&manifest.entry).is_file()
+        || manifest
+            .main
+            .as_ref()
+            .is_some_and(|main| !root.join(main).is_file())
+    {
         let temporary = root.with_extension(format!("{}.tmp", std::process::id()));
         if temporary.exists() {
             fs::remove_dir_all(&temporary)
@@ -295,9 +314,12 @@ fn load_extension(path: &Path, cache: &Path) -> Result<LoadedExtension, String> 
         name: manifest.name,
         version: manifest.version,
         entry: normalize_path(root.join(&manifest.entry)),
+        main: manifest.main.map(|main| normalize_path(root.join(main))),
         root: normalize_path(root),
+        archive: normalize_path(path.to_path_buf()),
         enabled: true,
         builtin: false,
+        managed: false,
     })
 }
 
@@ -317,23 +339,31 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), String> {
     if manifest.name.trim().is_empty() || manifest.version.trim().is_empty() {
         return Err("name and version are required".to_string());
     }
-    let entry = Path::new(&manifest.entry);
-    if manifest.entry.is_empty()
-        || !entry
+    if !manifest.version.chars().all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '+' | '-')
+    }) {
+        return Err("version contains unsupported characters".to_string());
+    }
+    validate_manifest_path("entry", &manifest.entry)?;
+    if let Some(main) = &manifest.main {
+        validate_manifest_path("main", main)?;
+    }
+    Ok(())
+}
+
+fn validate_manifest_path(name: &str, value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || !Path::new(value)
             .components()
             .all(|component| matches!(component, std::path::Component::Normal(_)))
     {
-        return Err("entry must be a safe relative path".to_string());
+        return Err(format!("{name} must be a safe relative path"));
     }
     Ok(())
 }
 
 pub fn replacement_asar(executable: &Path, runtime: &Path) -> Result<PathBuf, String> {
-    let original = executable
-        .parent()
-        .ok_or("OpenCode executable has no parent directory")?
-        .join("resources")
-        .join("app.asar");
+    let original = resources_directory(executable)?.join("app.asar");
     let bytes = fs::read(&original)
         .map_err(|error| format!("cannot read {}: {error}", original.display()))?;
     let reader = AsarReader::new(&bytes, Some(original.clone()))
@@ -355,6 +385,8 @@ pub fn replacement_asar(executable: &Path, runtime: &Path) -> Result<PathBuf, St
 
     let path = electron_hook::paths::asar_cache_path(&format!("ocdx-{}", std::process::id()));
     if let Some(directory) = path.parent() {
+        fs::create_dir_all(directory)
+            .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
         if let Ok(entries) = fs::read_dir(directory) {
             entries
                 .filter_map(Result::ok)
@@ -524,7 +556,7 @@ pub fn launch_app(
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 pub fn launch_app(
     executable: &Path,
     library: &Path,
@@ -542,6 +574,33 @@ pub fn launch_app(
             .ok_or("generated ASAR path is not valid UTF-8")?,
         args,
         true,
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn launch_app(
+    executable: &Path,
+    library: &Path,
+    asar: &Path,
+    args: Vec<String>,
+) -> Result<(), String> {
+    use std::time::Duration;
+
+    electron_hook::launch_with_options(
+        executable
+            .to_str()
+            .ok_or("OpenCode executable path is not valid UTF-8")?,
+        library
+            .to_str()
+            .ok_or("Electron-Hook library path is not valid UTF-8")?,
+        asar.to_str()
+            .ok_or("generated ASAR path is not valid UTF-8")?,
+        args,
+        true,
+        &electron_hook::LaunchOptions {
+            ready_timeout: Some(Duration::from_secs(10)),
+        },
     )?;
     Ok(())
 }
@@ -593,6 +652,46 @@ fn normalize_path(path: PathBuf) -> PathBuf {
     path
 }
 
+#[cfg(target_os = "macos")]
+fn executable_from_input(path: PathBuf) -> Result<PathBuf, String> {
+    if path.extension().is_none_or(|extension| extension != "app") || !path.is_dir() {
+        return Ok(path);
+    }
+
+    let name = path.file_stem().ok_or("OpenCode app bundle has no name")?;
+    let executable = path.join("Contents").join("MacOS").join(name);
+    if executable.is_file() {
+        Ok(executable)
+    } else {
+        Err(format!(
+            "cannot find the app executable at {}; pass its Contents/MacOS path instead",
+            executable.display()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn executable_from_input(path: PathBuf) -> Result<PathBuf, String> {
+    Ok(path)
+}
+
+#[cfg(target_os = "macos")]
+fn resources_directory(executable: &Path) -> Result<PathBuf, String> {
+    executable
+        .parent()
+        .and_then(Path::parent)
+        .map(|contents| contents.join("Resources"))
+        .ok_or_else(|| "OpenCode executable is not inside a macOS app bundle".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resources_directory(executable: &Path) -> Result<PathBuf, String> {
+    executable
+        .parent()
+        .map(|directory| directory.join("resources"))
+        .ok_or_else(|| "OpenCode executable has no parent directory".to_string())
+}
+
 #[cfg(windows)]
 fn default_executable() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA").map(|directory| {
@@ -612,4 +711,19 @@ fn default_executable() -> Option<PathBuf> {
     ]
     .into_iter()
     .find(|path| path.is_file())
+}
+
+#[cfg(target_os = "macos")]
+fn default_executable() -> Option<PathBuf> {
+    let system = [
+        PathBuf::from("/Applications/OpenCode.app/Contents/MacOS/OpenCode"),
+        PathBuf::from("/Applications/OpenCode Beta.app/Contents/MacOS/OpenCode Beta"),
+    ];
+    let user = dirs::home_dir().into_iter().flat_map(|home| {
+        [
+            home.join("Applications/OpenCode.app/Contents/MacOS/OpenCode"),
+            home.join("Applications/OpenCode Beta.app/Contents/MacOS/OpenCode Beta"),
+        ]
+    });
+    system.into_iter().chain(user).find(|path| path.is_file())
 }

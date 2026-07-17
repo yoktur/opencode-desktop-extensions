@@ -57,7 +57,7 @@ export default defineExtension({
       label: "Subway Surfers",
       order: 20,
       checked: open,
-      icon: () => <img class="oc-mod-subway-icon" src={ICON} alt="" />,
+      icon: (_checked) => <img class="oc-mod-subway-icon" src={ICON} alt="" />,
     });
   },
 });

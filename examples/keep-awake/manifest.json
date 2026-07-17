@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "keep-awake",
+  "name": "Keep Awake",
+  "version": "1.0.0",
+  "entry": "renderer.js",
+  "main": "main.cjs"
+}

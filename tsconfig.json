@@ -10,6 +10,7 @@
     "noEmit": true,
     "paths": {
       "@hona/ocdx": ["./src/index.ts"],
+      "@hona/ocdx/main": ["./src/main.ts"],
       "@hona/ocdx/solid": ["./src/solid.tsx"]
     },
     "skipLibCheck": true,

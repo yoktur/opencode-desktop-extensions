@@ -175,7 +175,6 @@ export default defineExtension({
       title: "Vertical tabs",
       description: "Move desktop tabs into a browser-style pane on the left.",
       value: enabled,
-      after: "new-layout",
       badge: "New",
     });
 

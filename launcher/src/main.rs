@@ -9,16 +9,17 @@ use std::io::Write;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let log = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|directory| directory.join("ocdx.log")));
+    let log = log_path();
+    if let Some(directory) = log.as_ref().and_then(|path| path.parent()) {
+        let _ = std::fs::create_dir_all(directory);
+    }
     if let Some(path) = &log {
         std::env::set_var("OCDX_LOG", path);
     }
     write_log("launcher started");
     match launch() {
         Ok(()) => {
-            write_log("Electron-Hook launch returned successfully");
+            write_log("launch returned successfully");
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -28,6 +29,18 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn log_path() -> Option<std::path::PathBuf> {
+    dirs::cache_dir().map(|directory| directory.join("OCDX").join("ocdx.log"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn log_path() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|directory| directory.join("ocdx.log")))
 }
 
 #[cfg(windows)]
@@ -95,7 +108,7 @@ fn launch() -> Result<(), String> {
     let asar = replacement_asar(&executable, &runtime)?;
     write_log(&format!("replacement ASAR: {}", asar.display()));
 
-    write_log("calling Electron-Hook");
+    write_log("calling platform launcher");
     launch_app(&executable, &library, &asar, options.args)?;
     Ok(())
 }

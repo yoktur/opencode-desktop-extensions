@@ -499,13 +499,13 @@ checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 [[package]]
 name = "electron-hook"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92f05eff7b8702cf4e4b2d7700c87c60d5660cdde33d809310873f78c09f4e28"
+source = "git+https://github.com/Hona/Electron-Hook.git?rev=04c070a9a4d3aecc073458138d46c079284b1880#04c070a9a4d3aecc073458138d46c079284b1880"
 dependencies = [
  "asar",
+ "cc",
  "ctor",
  "dirs",
- "electron-hook-detours-sys",
+ "electron-hook-detours-sys 0.1.0 (git+https://github.com/Hona/Electron-Hook.git?rev=04c070a9a4d3aecc073458138d46c079284b1880)",
  "libc",
  "retour",
  "serde_json",
@@ -519,6 +519,16 @@ name = "electron-hook-detours-sys"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26aa926e5eb3f1a65f2fb13e39d652133ff52e4bf94efd727995b0ddacd4dadc"
+dependencies = [
+ "bindgen",
+ "cc",
+ "cmake",
+]
+
+[[package]]
+name = "electron-hook-detours-sys"
+version = "0.1.0"
+source = "git+https://github.com/Hona/Electron-Hook.git?rev=04c070a9a4d3aecc073458138d46c079284b1880#04c070a9a4d3aecc073458138d46c079284b1880"
 dependencies = [
  "bindgen",
  "cc",
@@ -902,7 +912,7 @@ dependencies = [
  "asar",
  "dirs",
  "electron-hook",
- "electron-hook-detours-sys",
+ "electron-hook-detours-sys 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "winapi",

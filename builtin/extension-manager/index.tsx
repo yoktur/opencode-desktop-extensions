@@ -2,6 +2,7 @@ import { Tag } from "@opencode-ai/ui/v2/badge-v2";
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2";
 import { Switch } from "@opencode-ai/ui/v2/switch-v2";
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2";
+import { Icon } from "@opencode-ai/ui/icon";
 import { defineExtension } from "@hona/ocdx";
 import { mountSolid } from "@hona/ocdx/solid";
 import { For, Show, onMount, type JSX, type ParentProps } from "solid-js";
@@ -14,6 +15,7 @@ type InstalledExtension = {
   version: string;
   enabled: boolean;
   builtin: boolean;
+  hasMain: boolean;
 };
 
 export default defineExtension({
@@ -23,7 +25,7 @@ export default defineExtension({
       id: "extensions",
       after: "shortcuts",
       title: "Extensions",
-      icon: () => <ExtensionIcon />,
+      icon: () => <Icon name="dot-grid" />,
       mount: mountSolid(() => <ExtensionManager />),
     });
   },
@@ -151,7 +153,6 @@ function ExtensionManager() {
                 void installFiles(event.dataTransfer.files);
             }}
           >
-            <ExtensionIcon size={24} />
             <div>
               <strong>Drop extension files</strong>
               <span>Choose one or more .ocdx archives from your computer</span>
@@ -198,7 +199,7 @@ function ExtensionManager() {
               disabled={state.busy || !state.url.trim()}
               onClick={() => void installURL()}
             >
-              Install URL
+              Install
             </ButtonV2>
           </div>
         </section>
@@ -224,6 +225,9 @@ function ExtensionManager() {
                       <Show when={extension.builtin}>
                         <Tag variant="accent">Built-in</Tag>
                       </Show>
+                      <Show when={extension.hasMain}>
+                        <Tag variant="neutral">Main process</Tag>
+                      </Show>
                     </span>
                   }
                   description={extension.id}
@@ -232,6 +236,7 @@ function ExtensionManager() {
                       checked={extension.enabled}
                       disabled={extension.builtin || state.busy}
                       onChange={(enabled) => void toggle(extension, enabled)}
+                      hideLabel
                     >
                       Enable {extension.name}
                     </Switch>
@@ -254,26 +259,6 @@ async function request<T = unknown>(path: string, init?: RequestInit) {
       result.error || `Request failed with status ${response.status}`,
     );
   return result;
-}
-
-function ExtensionIcon(props: { size?: number }) {
-  const size = props.size ?? 16;
-  return (
-    <svg
-      data-slot="icon-svg"
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path d="M2.5 2.5H6.5V6.5H2.5V2.5Z" stroke="currentColor" />
-      <path d="M9.5 2.5H13.5V6.5H9.5V2.5Z" stroke="currentColor" />
-      <path d="M2.5 9.5H6.5V13.5H2.5V9.5Z" stroke="currentColor" />
-      <path d="M9.5 9.5H13.5V13.5H9.5V9.5Z" stroke="currentColor" />
-    </svg>
-  );
 }
 
 function SettingsSection(props: ParentProps<{ title: JSX.Element }>) {

@@ -24,12 +24,13 @@ The extension ID, name, and version come from `manifest.json`. The build automat
 # Demo Plugins
 
 - [Extension Manager](./builtin/extension-manager)
+- [Keep Awake](./examples/keep-awake)
 - [Subway Surfers](./examples/subway-surfers)
 - [Vertical Tabs](./examples/vertical-tabs)
 
 ## How It Works
 
-OCDX uses [Electron-Hook](https://github.com/MeguminSama/Electron-Hook) ([also used by Vencord Launcher](https://github.com/MeguminSama/vencord-launcher) and [moonlight launcher](https://github.com/MeguminSama/moonlight-launcher)) to start the installed production app with a temporary in-memory bootstrap.
+OCDX uses [Electron-Hook](https://github.com/Hona/Electron-Hook) to start the installed production app with a temporary in-memory bootstrap. Its macOS backend uses dyld interposition while leaving the installed app and its signature untouched.
 
 OpenCode's files, signatures, updater, and normal launcher remain untouched. The stable OCDX runtime loads independent `.ocdx` archives from a mods folder, so changing extensions never requires rebuilding the Rust launcher.
 
@@ -40,8 +41,9 @@ release/
   mods/
     subway-surfers.ocdx
     vertical-tabs.ocdx
-  ocdx.exe
-  ocdx_launcher.dll
+    keep-awake.ocdx
+  ocdx[.exe]
+  ocdx_launcher.dll | libocdx_launcher.so | libocdx_launcher.dylib
   runtime.js
 ```
 
@@ -61,6 +63,7 @@ Drop archives into either folder:
 ```text
 release/mods/
 %APPDATA%/OCDX/mods/
+~/Library/Application Support/OCDX/mods/
 ```
 
 The built-in **Extensions** settings page can also install local files, accept drag and drop, download an `.ocdx` URL, and enable or disable extensions live.
@@ -71,9 +74,9 @@ OCDX validates archive paths and manifests, extracts changed archives into its c
 
 Requirements:
 
-- Windows with the production OpenCode Desktop app installed
+- Windows or macOS with the production OpenCode Desktop app installed
 - [Bun](https://bun.sh)
-- Stable Rust with MSVC build tools
+- Stable Rust and platform build tools (MSVC on Windows, Xcode Command Line Tools on macOS)
 
 ```sh
 bun install
@@ -87,14 +90,34 @@ Close an existing OpenCode Desktop instance before launching. To target another 
 bun run launch -- --executable "D:\Apps\OpenCode\OpenCode.exe"
 ```
 
+On Windows, `release/ocdx.exe` embeds the same blue development icon. You can pin that executable directly to the taskbar or create a normal desktop shortcut to it.
+
+On macOS, OCDX discovers both stable and beta installations. An explicit app bundle or executable also works:
+
+```sh
+bun run launch -- --executable "/Applications/OpenCode Beta.app"
+```
+
+`bun run build:all` also creates `release/OCDX.app` with OpenCode's blue icon. To install a Dock launcher, copy that app to `/Applications`, open it once, then drag **OCDX** from Applications to the Dock:
+
+```sh
+cp -R release/OCDX.app /Applications/OCDX.app
+open /Applications/OCDX.app
+```
+
+The macOS equivalent of the Windows taskbar is the Dock. OCDX is a launcher rather than a background menu-bar app, so it does not remain in the menu bar after OpenCode starts.
+
+After OpenCode installs an application update, quit the normally relaunched app and start it through OCDX again.
+
 ## Extension Structure
 
-An extension repository needs one manifest, one default export, and any local assets:
+An extension repository needs a manifest, a renderer entry, and any local assets. A trusted main-process entry is optional:
 
 ```text
 my-extension/
   assets/
   index.tsx
+  main.ts        # optional trusted main-process entry
   manifest.json
   styles.css
 ```
@@ -105,7 +128,8 @@ my-extension/
   "id": "my-extension",
   "name": "My Extension",
   "version": "1.0.0",
-  "entry": "renderer.js"
+  "entry": "renderer.js",
+  "main": "main.cjs"
 }
 ```
 
@@ -131,9 +155,35 @@ activate(ocdx) {
   ocdx.lifecycle
   ocdx.assets
   ocdx.state
+  ocdx.main
   ocdx.desktop
   ocdx.unsafe
 }
+```
+
+### Main Process Entry
+
+Extensions that need trusted Electron main-process behavior can add `main.ts` and declare `"main": "main.cjs"`. Main entries are unsandboxed code with the same privileges as OpenCode; only install archives you fully trust.
+
+Core OCDX provides lifecycle ownership and an extension-namespaced typed method bridge, not feature-specific host APIs. Renderer extensions share one JavaScript realm, so this namespacing is not a security boundary.
+
+```ts
+// main.ts
+import { defineMainExtension } from "@hona/ocdx/main";
+
+export default defineMainExtension((ocdx) => ({
+  status() {
+    return { extension: ocdx.id };
+  },
+}));
+```
+
+```ts
+// index.tsx
+import type mainExtension from "./main";
+
+const main = ocdx.main<typeof mainExtension>();
+const status = await main.status();
 ```
 
 ### Lifecycle
@@ -241,7 +291,7 @@ const visible = ocdx.state.boolean("visible", false);
 ocdx.desktop.titlebar.toggle({
   id: "inspector",
   label: "Toggle inspector",
-  icon: "status",
+  icon: (checked) => checked ? <InspectorOpenIcon /> : <InspectorClosedIcon />,
   checked: visible,
 });
 ```
@@ -265,7 +315,6 @@ ocdx.desktop.settings.toggle({
   title: "My extension",
   description: "Show the extension UI.",
   value: enabled,
-  after: "new-layout",
   badge: "New",
 });
 ```
@@ -359,10 +408,11 @@ Public exports:
 
 ```text
 @hona/ocdx
+@hona/ocdx/main
 @hona/ocdx/solid
 ```
 
-Electron-Hook currently supports Windows and Linux. The packaged launcher is verified on Windows; macOS is not supported by Electron-Hook.
+The macOS launcher requires OpenCode's signed main executable to allow DYLD environment variables and disable library validation. Electron-Hook removes its DYLD entry before OpenCode spawns helpers, and verifies bootstrap readiness instead of silently opening an unmodified app if injection fails.
 
 > Random footnote: a small `ocdx` command may eventually package and install archives, but the MVP deliberately uses ordinary build scripts and drag-and-drop files instead of shipping a CLI.
 

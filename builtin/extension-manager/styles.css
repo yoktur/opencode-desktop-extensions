@@ -8,10 +8,9 @@
 
 .ocdx-manager-drop {
   display: flex;
-  min-height: 84px;
   align-items: center;
-  gap: 14px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px 16px;
   border-radius: 8px;
   background: var(--v2-background-bg-layer-01);
   color: var(--v2-text-text-muted);
@@ -30,7 +29,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .ocdx-manager-drop strong {
