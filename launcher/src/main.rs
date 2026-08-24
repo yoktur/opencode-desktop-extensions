@@ -1,7 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use ocdx_launcher::{
-    discover_extensions, hook_library, launch_app, parse_args, production_executable,
+    extension_directories, hook_library, launch_app, parse_args, production_executable,
     replacement_asar, runtime_bundle,
 };
 use std::fs::OpenOptions;
@@ -89,22 +89,16 @@ fn launch() -> Result<(), String> {
     write_log(&format!("runtime bundle: {}", runtime.display()));
     let library = hook_library()?;
     write_log(&format!("hook library: {}", library.display()));
-    let (extensions, errors, mods, config) = discover_extensions();
-    for error in errors {
-        write_log(&format!("extension skipped: {error}"));
+    let directories = extension_directories();
+    write_log(&format!("user mods: {}", directories.user.display()));
+    if let Some(builtin) = &directories.builtin {
+        std::env::set_var("OCDX_BUILTIN_DIR", builtin);
     }
-    write_log(&format!(
-        "extensions: {} from {}",
-        extensions.len(),
-        mods.display()
-    ));
-    std::env::set_var(
-        "OCDX_EXTENSIONS",
-        serde_json::to_string(&extensions)
-            .map_err(|error| format!("cannot serialize extensions: {error}"))?,
-    );
-    std::env::set_var("OCDX_MODS_DIR", &mods);
-    std::env::set_var("OCDX_CONFIG", &config);
+    if let Some(portable) = &directories.portable {
+        std::env::set_var("OCDX_PORTABLE_DIR", portable);
+    }
+    std::env::set_var("OCDX_MODS_DIR", &directories.user);
+    std::env::set_var("OCDX_CONFIG", &directories.config);
     let asar = replacement_asar(&executable, &runtime)?;
     write_log(&format!("replacement ASAR: {}", asar.display()));
 

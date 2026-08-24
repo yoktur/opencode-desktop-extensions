@@ -1,53 +1,25 @@
 use ::asar::{AsarReader, AsarWriter};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 pub use electron_hook::*;
 
-pub struct LaunchOptions {
+pub struct LauncherArgs {
     pub executable: Option<PathBuf>,
     pub runtime: Option<PathBuf>,
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ExtensionManifest {
-    schema: u32,
-    id: String,
-    name: String,
-    version: String,
-    entry: String,
-    #[serde(default)]
-    main: Option<String>,
+pub struct ExtensionDirectories {
+    pub builtin: Option<PathBuf>,
+    pub portable: Option<PathBuf>,
+    pub user: PathBuf,
+    pub config: PathBuf,
 }
 
-#[derive(Debug, Serialize)]
-pub struct LoadedExtension {
-    id: String,
-    name: String,
-    version: String,
-    entry: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    main: Option<PathBuf>,
-    root: PathBuf,
-    archive: PathBuf,
-    enabled: bool,
-    builtin: bool,
-    managed: bool,
-}
-
-#[derive(Default, Deserialize)]
-struct OcdxConfig {
-    disabled: BTreeSet<String>,
-}
-
-pub fn parse_args() -> Result<LaunchOptions, String> {
+pub fn parse_args() -> Result<LauncherArgs, String> {
     let mut values = env::args().skip(1);
     let mut executable = None;
     let mut runtime = None;
@@ -71,15 +43,13 @@ pub fn parse_args() -> Result<LaunchOptions, String> {
             continue;
         }
         if value == "--help" || value == "-h" {
-            return Err(
-                "Usage: ocdx [--executable PATH] [--runtime PATH] [-- ELECTRON_ARGS...]"
-                    .to_string(),
-            );
+            println!("Usage: ocdx [--executable PATH] [--runtime PATH] [-- ELECTRON_ARGS...]");
+            std::process::exit(0);
         }
         return Err(format!("unknown option: {value}"));
     }
 
-    Ok(LaunchOptions {
+    Ok(LauncherArgs {
         executable,
         runtime,
         args,
@@ -152,214 +122,26 @@ pub fn hook_library() -> Result<PathBuf, String> {
     ))
 }
 
-pub fn discover_extensions() -> (Vec<LoadedExtension>, Vec<String>, PathBuf, PathBuf) {
+/// The bootstrap owns archive validation, extraction, and caching; the
+/// launcher only names the directories it should scan.
+pub fn extension_directories() -> ExtensionDirectories {
     let install = env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
-    let builtin = install.as_ref().map(|directory| directory.join("builtin"));
-    let portable = install.as_ref().map(|directory| directory.join("mods"));
     let user = dirs::data_dir()
         .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join("OCDX")
         .join("mods");
-    let config_path = user.parent().map_or_else(
+    let config = user.parent().map_or_else(
         || PathBuf::from("config.json"),
         |directory| directory.join("config.json"),
     );
-    let config = fs::read(&config_path)
-        .ok()
-        .and_then(|value| serde_json::from_slice::<OcdxConfig>(&value).ok())
-        .unwrap_or_default();
-    let mut errors = Vec::new();
-    if let Err(error) = fs::create_dir_all(&user) {
-        errors.push(format!("cannot create {}: {error}", user.display()));
+    ExtensionDirectories {
+        builtin: install.as_ref().map(|directory| directory.join("builtin")),
+        portable: install.map(|directory| directory.join("mods")),
+        user,
+        config,
     }
-
-    let cache = dirs::cache_dir()
-        .unwrap_or_else(env::temp_dir)
-        .join("OCDX")
-        .join("extensions");
-    let mut selected = BTreeMap::new();
-    let directories = builtin
-        .into_iter()
-        .map(|directory| (directory, true, false))
-        .chain(portable.into_iter().map(|directory| (directory, false, false)))
-        .chain([(user.clone(), false, true)]);
-    for (directory, builtin, managed) in directories {
-        let Ok(entries) = fs::read_dir(&directory) else {
-            continue;
-        };
-        let mut archives = entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("ocdx"))
-            })
-            .collect::<Vec<_>>();
-        archives.sort();
-        for archive in archives {
-            match load_extension(&archive, &cache) {
-                Ok(mut extension) => {
-                    extension.builtin = builtin;
-                    extension.managed = managed;
-                    extension.enabled = builtin || !config.disabled.contains(&extension.id);
-                    if selected
-                        .get(&extension.id)
-                        .is_some_and(|existing: &LoadedExtension| existing.builtin)
-                    {
-                        errors.push(format!(
-                            "{}: extension id is reserved by a built-in extension",
-                            archive.display()
-                        ));
-                        continue;
-                    }
-                    selected.insert(extension.id.clone(), extension);
-                }
-                Err(error) => errors.push(format!("{}: {error}", archive.display())),
-            }
-        }
-    }
-    (selected.into_values().collect(), errors, user, config_path)
-}
-
-fn load_extension(path: &Path, cache: &Path) -> Result<LoadedExtension, String> {
-    let file = File::open(path).map_err(|error| format!("cannot open archive: {error}"))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|error| format!("invalid archive: {error}"))?;
-    if archive.len() > 1_024 {
-        return Err("archive contains more than 1024 entries".to_string());
-    }
-
-    let manifest = {
-        let mut file = archive
-            .by_name("manifest.json")
-            .map_err(|_| "manifest.json is missing".to_string())?;
-        if file.size() > 64 * 1_024 {
-            return Err("manifest.json is larger than 64 KiB".to_string());
-        }
-        let mut value = String::new();
-        file.read_to_string(&mut value)
-            .map_err(|error| format!("cannot read manifest.json: {error}"))?;
-        serde_json::from_str::<ExtensionManifest>(&value)
-            .map_err(|error| format!("invalid manifest.json: {error}"))?
-    };
-    validate_manifest(&manifest)?;
-    archive
-        .by_name(&manifest.entry)
-        .map_err(|_| format!("entry is missing: {}", manifest.entry))?;
-    if let Some(main) = &manifest.main {
-        archive
-            .by_name(main)
-            .map_err(|_| format!("main entry is missing: {main}"))?;
-    }
-
-    let mut total = 0_u64;
-    for index in 0..archive.len() {
-        let file = archive
-            .by_index(index)
-            .map_err(|error| format!("cannot inspect archive: {error}"))?;
-        if file.enclosed_name().is_none() {
-            return Err(format!("unsafe archive path: {}", file.name()));
-        }
-        total = total
-            .checked_add(file.size())
-            .ok_or("archive size overflow")?;
-        if total > 1_073_741_824 {
-            return Err("archive expands beyond 1 GiB".to_string());
-        }
-    }
-
-    let metadata =
-        fs::metadata(path).map_err(|error| format!("cannot inspect archive file: {error}"))?;
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |value| value.as_secs());
-    let root = cache.join(&manifest.id).join(format!(
-        "{}-{}-{modified}",
-        manifest.version,
-        metadata.len()
-    ));
-    if !root.join(&manifest.entry).is_file()
-        || manifest
-            .main
-            .as_ref()
-            .is_some_and(|main| !root.join(main).is_file())
-    {
-        let temporary = root.with_extension(format!("{}.tmp", std::process::id()));
-        if temporary.exists() {
-            fs::remove_dir_all(&temporary)
-                .map_err(|error| format!("cannot clear extension cache: {error}"))?;
-        }
-        if let Some(parent) = temporary.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("cannot create extension cache: {error}"))?;
-        }
-        archive
-            .extract(&temporary)
-            .map_err(|error| format!("cannot extract extension: {error}"))?;
-        if root.exists() {
-            fs::remove_dir_all(&root)
-                .map_err(|error| format!("cannot replace extension cache: {error}"))?;
-        }
-        fs::rename(&temporary, &root)
-            .map_err(|error| format!("cannot activate extension cache: {error}"))?;
-    }
-
-    Ok(LoadedExtension {
-        id: manifest.id,
-        name: manifest.name,
-        version: manifest.version,
-        entry: normalize_path(root.join(&manifest.entry)),
-        main: manifest.main.map(|main| normalize_path(root.join(main))),
-        root: normalize_path(root),
-        archive: normalize_path(path.to_path_buf()),
-        enabled: true,
-        builtin: false,
-        managed: false,
-    })
-}
-
-fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), String> {
-    if manifest.schema != 1 {
-        return Err(format!("unsupported manifest schema: {}", manifest.schema));
-    }
-    if manifest.id.is_empty()
-        || !manifest.id.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-        })
-    {
-        return Err(
-            "id must contain only letters, numbers, dots, underscores, and hyphens".to_string(),
-        );
-    }
-    if manifest.name.trim().is_empty() || manifest.version.trim().is_empty() {
-        return Err("name and version are required".to_string());
-    }
-    if !manifest.version.chars().all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '+' | '-')
-    }) {
-        return Err("version contains unsupported characters".to_string());
-    }
-    validate_manifest_path("entry", &manifest.entry)?;
-    if let Some(main) = &manifest.main {
-        validate_manifest_path("main", main)?;
-    }
-    Ok(())
-}
-
-fn validate_manifest_path(name: &str, value: &str) -> Result<(), String> {
-    if value.is_empty()
-        || !Path::new(value)
-            .components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)))
-    {
-        return Err(format!("{name} must be a safe relative path"));
-    }
-    Ok(())
 }
 
 pub fn replacement_asar(executable: &Path, runtime: &Path) -> Result<PathBuf, String> {

@@ -4,9 +4,12 @@ const { pathToFileURL } = require("node:url")
 const { app, net, protocol, utilityProcess, webContents } = require("electron")
 
 const runtimePath = process.env.MODLOADER_MOD_ENTRYPOINT
-const extensions = JSON.parse(process.env.OCDX_EXTENSIONS || "[]")
-const roots = new Map(extensions.map((extension) => [extension.id, extension.root]))
+const originalAsar = path.resolve(__dirname, process.env.MODLOADER_ORIGINAL_ASAR_RELATIVE)
+const extensions = []
+const roots = new Map()
 const mainExtensions = new Map()
+const builtinDirectory = process.env.OCDX_BUILTIN_DIR
+const portableDirectory = process.env.OCDX_PORTABLE_DIR
 const modsDirectory = process.env.OCDX_MODS_DIR
 const configPath = process.env.OCDX_CONFIG
 const runtime = fs.readFileSync(runtimePath, "utf8")
@@ -15,7 +18,49 @@ const log = (message) => {
   fs.appendFileSync(process.env.OCDX_LOG, `${message}\n`)
 }
 log(`bootstrap started in pid ${process.pid}`)
-log(`extensions discovered: ${extensions.length}`)
+const discovered = discoverExtensions().catch((error) => {
+  log(`extension discovery failed: ${error.stack || error}`)
+})
+
+// The bootstrap owns all archive validation, extraction, and caching; the
+// Rust launcher only names the directories through OCDX_* variables.
+async function discoverExtensions() {
+  const config = readConfig()
+  const sources = [
+    { directory: builtinDirectory, builtin: true, managed: false },
+    { directory: portableDirectory, builtin: false, managed: false },
+    { directory: modsDirectory, builtin: false, managed: true },
+  ]
+  if (modsDirectory) fs.mkdirSync(modsDirectory, { recursive: true })
+  const selected = new Map()
+  for (const source of sources) {
+    if (!source.directory || !fs.existsSync(source.directory)) continue
+    const archives = fs
+      .readdirSync(source.directory)
+      .filter((name) => name.toLowerCase().endsWith(".ocdx"))
+      .sort()
+    for (const name of archives) {
+      const archive = path.join(source.directory, name)
+      try {
+        const extension = await loadArchive(archive)
+        if (selected.get(extension.id)?.builtin) {
+          throw new Error("extension id is reserved by a built-in extension")
+        }
+        extension.builtin = source.builtin
+        extension.managed = source.managed
+        extension.enabled = source.builtin || !config.disabled.includes(extension.id)
+        selected.set(extension.id, extension)
+      } catch (error) {
+        log(`extension skipped: ${archive}: ${error.stack || error}`)
+      }
+    }
+  }
+  for (const extension of selected.values()) {
+    extensions.push(extension)
+    roots.set(extension.id, extension.root)
+  }
+  log(`extensions discovered: ${extensions.length}`)
+}
 const signalReady = () => {
   if (!process.env.MODLOADER_READY_FILE) return
   try {
@@ -46,7 +91,7 @@ protocol.registerSchemesAsPrivileged = (schemes) => {
   ])
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   protocol.handle("ocdx", async (request) => {
     const url = new URL(request.url)
     if (url.host === "manager") return handleManagerRequest(request, url)
@@ -65,6 +110,7 @@ void app.whenReady().then(() => {
       headers: range ? { Range: range } : undefined,
     })
   })
+  await discovered
   for (const extension of extensions) {
     if (!extension.enabled || !extension.main) continue
     try {
@@ -115,6 +161,7 @@ app.on("web-contents-created", (_event, contents) => {
 })
 
 async function inject(contents) {
+  await discovered
   try {
     await contents.executeJavaScript(`${runtime}\n//# sourceURL=ocdx-runtime.js`, true)
   } catch (error) {
@@ -231,6 +278,7 @@ async function handleMainRequest(request, url) {
 
 async function handleManagerRequest(request, url) {
   if (request.method === "OPTIONS") return json({ ok: true })
+  await discovered
   if (request.method === "GET" && url.pathname === "/extensions") {
     return json({ extensions: extensions.map(extensionInfo) })
   }
@@ -328,36 +376,36 @@ async function installArchive(name, bytes) {
   fs.rmSync(temporary, { force: true })
   fs.rmSync(backup, { force: true })
   fs.writeFileSync(temporary, bytes)
-  let extension
-  let existing
-  let existingWasEnabled = false
-  let activated = false
-  let committed = false
-  let previousRoot
-  let rootStaged = false
+  // Each completed step pushes its compensation; a failure runs them in reverse.
+  const undo = [() => fs.rmSync(temporary, { force: true })]
   try {
-    extension = await loadArchive(temporary)
+    const extension = await loadArchive(temporary)
     if (extension.main) {
       throw new Error("Main-process extensions must be installed from the mods directory and require a restart")
     }
-    existing = extensions.find((item) => item.id === extension.id)
+    extension.enabled = true
+    extension.managed = true
+    const existing = extensions.find((item) => item.id === extension.id)
     if (existing?.builtin) throw new Error("Extension ID is reserved by a built-in extension")
-    existingWasEnabled = Boolean(existing?.enabled)
-    if (existingWasEnabled) await setExtensionEnabled(existing, false)
-    previousRoot = roots.get(extension.id)
-    roots.set(extension.id, extension.root)
-    rootStaged = true
-    await setExtensionEnabled(extension, true)
-    activated = true
-
-    if (fs.existsSync(target)) fs.renameSync(target, backup)
-    try {
-      fs.renameSync(temporary, target)
-      committed = true
-    } catch (error) {
-      if (fs.existsSync(backup)) fs.renameSync(backup, target)
-      throw error
+    if (existing?.enabled) {
+      await setExtensionEnabled(existing, false)
+      undo.push(() => setExtensionEnabled(existing, true))
     }
+    const previousRoot = roots.get(extension.id)
+    roots.set(extension.id, extension.root)
+    undo.push(() => {
+      if (previousRoot) roots.set(extension.id, previousRoot)
+      else roots.delete(extension.id)
+    })
+    await setExtensionEnabled(extension, true)
+    undo.push(() => setExtensionEnabled(extension, false))
+
+    if (fs.existsSync(target)) {
+      fs.renameSync(target, backup)
+      undo.push(() => fs.renameSync(backup, target))
+    }
+    fs.renameSync(temporary, target)
+    undo.push(() => fs.rmSync(target, { force: true }))
     extension.archive = target
 
     const config = readConfig()
@@ -370,18 +418,13 @@ async function installArchive(name, bytes) {
     fs.rmSync(backup, { force: true })
     return json({ ok: true, extension: extensionInfo(extension), filename: path.basename(target) })
   } catch (error) {
-    if (activated && extension) await setExtensionEnabled(extension, false).catch(() => undefined)
-    if (rootStaged && extension) {
-      if (previousRoot) roots.set(extension.id, previousRoot)
-      else roots.delete(extension.id)
+    for (const compensate of undo.reverse()) {
+      try {
+        await compensate()
+      } catch (rollbackError) {
+        log(`install rollback step failed: ${rollbackError.stack || rollbackError}`)
+      }
     }
-    if (existingWasEnabled && existing) await setExtensionEnabled(existing, true).catch(() => undefined)
-    if (committed) {
-      fs.rmSync(target, { force: true })
-      if (fs.existsSync(backup)) fs.renameSync(backup, target)
-    }
-    fs.rmSync(temporary, { force: true })
-    fs.rmSync(backup, { force: true })
     return json({ error: error instanceof Error ? error.message : String(error) }, 400)
   }
 }
@@ -448,9 +491,9 @@ async function loadArchive(archivePath) {
     main: manifest.main ? path.join(root, manifest.main) : undefined,
     root,
     archive: archivePath,
-    enabled: true,
+    enabled: false,
     builtin: false,
-    managed: true,
+    managed: false,
   }
 }
 
@@ -506,7 +549,6 @@ function json(value, status = 200) {
   })
 }
 
-const originalAsar = path.resolve(__dirname, process.env.MODLOADER_ORIGINAL_ASAR_RELATIVE)
 const originalPackage = JSON.parse(fs.readFileSync(path.join(originalAsar, "package.json"), "utf8"))
 const originalMain = path.resolve(originalAsar, originalPackage.main)
 
