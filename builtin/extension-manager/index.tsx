@@ -1,7 +1,7 @@
-import { Tag } from "@opencode-ai/ui/v2/badge-v2";
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2";
-import { Switch } from "@opencode-ai/ui/v2/switch-v2";
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2";
+import { Badge } from "@opencode-ai/ui/badge";
+import { Button } from "@opencode-ai/ui/button";
+import { Switch } from "@opencode-ai/ui/switch";
+import { TextInput } from "@opencode-ai/ui/text-input";
 import { Icon } from "@opencode-ai/ui/icon";
 import { defineExtension } from "@hona/ocdx";
 import { mountSolid } from "@hona/ocdx/solid";
@@ -21,10 +21,12 @@ type InstalledExtension = {
 export default defineExtension({
   styles,
   activate(ocdx) {
+    // Desktop's own settings already have an "Extensions" tab, so this page
+    // sits after it under the OCDX name.
     ocdx.desktop.settings.page({
       id: "extensions",
-      after: "shortcuts",
-      title: "Extensions",
+      after: "extensions",
+      title: "OCDX",
       icon: () => <Icon name="dot-grid" />,
       mount: mountSolid(() => <ExtensionManager />),
     });
@@ -127,12 +129,14 @@ function ExtensionManager() {
 
   return (
     <>
-      <div class="settings-v2-tab-header">
-        <h2 class="settings-v2-tab-title">Extensions</h2>
+      <div class="settings-tab-header">
+        <div class="settings-tab-header-row">
+          <h2 class="settings-tab-title">OCDX Extensions</h2>
+        </div>
       </div>
-      <div class="settings-v2-tab-body ocdx-manager-body">
-        <section class="settings-v2-section ocdx-manager-install">
-          <h3 class="settings-v2-section-title">Install extensions</h3>
+      <div class="settings-tab-body ocdx-manager-body">
+        <section class="settings-section ocdx-manager-install">
+          <h3 class="settings-section-title">Install extensions</h3>
           <div
             class="ocdx-manager-drop"
             data-dragging={state.dragging}
@@ -157,7 +161,7 @@ function ExtensionManager() {
               <strong>Drop extension files</strong>
               <span>Choose one or more .ocdx archives from your computer</span>
             </div>
-            <ButtonV2
+            <Button
               type="button"
               size="small"
               variant="neutral"
@@ -165,7 +169,7 @@ function ExtensionManager() {
               onClick={() => picker.click()}
             >
               Browse
-            </ButtonV2>
+            </Button>
             <input
               ref={picker}
               type="file"
@@ -181,7 +185,7 @@ function ExtensionManager() {
           </div>
           <div class="ocdx-manager-method-label">Or install from a URL</div>
           <div class="ocdx-manager-url">
-            <TextInputV2
+            <TextInput
               appearance="large"
               value={state.url}
               placeholder="https://example.com/my-extension.ocdx"
@@ -192,7 +196,7 @@ function ExtensionManager() {
                 if (event.key === "Enter") void installURL();
               }}
             />
-            <ButtonV2
+            <Button
               type="button"
               size="normal"
               variant="neutral"
@@ -200,7 +204,7 @@ function ExtensionManager() {
               onClick={() => void installURL()}
             >
               Install
-            </ButtonV2>
+            </Button>
           </div>
         </section>
 
@@ -221,12 +225,12 @@ function ExtensionManager() {
                   title={
                     <span class="ocdx-manager-extension-title">
                       {extension.name}
-                      <Tag variant="neutral">v{extension.version}</Tag>
+                      <Badge variant="neutral">v{extension.version}</Badge>
                       <Show when={extension.builtin}>
-                        <Tag variant="accent">Built-in</Tag>
+                        <Badge variant="accent">Built-in</Badge>
                       </Show>
                       <Show when={extension.hasMain}>
-                        <Tag variant="neutral">Main process</Tag>
+                        <Badge variant="neutral">Main process</Badge>
                       </Show>
                     </span>
                   }
@@ -263,9 +267,9 @@ async function request<T = unknown>(path: string, init?: RequestInit) {
 
 function SettingsSection(props: ParentProps<{ title: JSX.Element }>) {
   return (
-    <section class="settings-v2-section">
-      <h3 class="settings-v2-section-title">{props.title}</h3>
-      <div data-component="settings-v2-list">{props.children}</div>
+    <section class="settings-section">
+      <h3 class="settings-section-title">{props.title}</h3>
+      <div data-component="settings-list">{props.children}</div>
     </section>
   );
 }
@@ -276,12 +280,12 @@ function SettingsRow(props: {
   control: JSX.Element;
 }) {
   return (
-    <div data-component="settings-v2-row">
-      <div data-slot="settings-v2-row-copy">
-        <div data-slot="settings-v2-row-title">{props.title}</div>
-        <div data-slot="settings-v2-row-description">{props.description}</div>
+    <div data-component="settings-row">
+      <div data-slot="settings-row-copy">
+        <div data-slot="settings-row-title">{props.title}</div>
+        <div data-slot="settings-row-description">{props.description}</div>
       </div>
-      <div data-slot="settings-v2-row-control">{props.control}</div>
+      <div data-slot="settings-row-control">{props.control}</div>
     </div>
   );
 }

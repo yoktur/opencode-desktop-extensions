@@ -1,18 +1,21 @@
-import { Tag } from "@opencode-ai/ui/v2/badge-v2";
-import { Icon } from "@opencode-ai/ui/v2/icon";
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2";
-import { Switch } from "@opencode-ai/ui/v2/switch-v2";
-import { createSignal, onCleanup, type JSX } from "solid-js";
+import { Badge } from "@opencode-ai/ui/badge";
+import { Icon } from "@opencode-ai/ui/icon";
+import { IconButton } from "@opencode-ai/ui/icon-button";
+import { Switch } from "@opencode-ai/ui/switch";
+import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { useCell } from "./solid";
 import { createCell } from "./state";
 import type {
-  Cell,
   DesktopIcon,
   DesktopTab,
   Dispose,
   OpenCodeDesktop,
   UnsafeDesktopSurfaces,
 } from "./types";
+
+const SETTINGS_TOGGLE_ANCHOR =
+  '[data-component="settings-row"]:has([data-action="settings-auto-accept-permissions"]), [data-component="settings-row"]:has([data-action="settings-language"])';
 
 export function createDesktop(
   surfaces: UnsafeDesktopSurfaces,
@@ -31,7 +34,7 @@ export function createDesktop(
           mount: (target) =>
             render(
               () => (
-                <IconButtonV2
+                <IconButton
                   type="button"
                   variant="ghost-muted"
                   size="large"
@@ -54,7 +57,7 @@ export function createDesktop(
             render(() => {
               const checked = useCell(options.checked);
               return (
-                <IconButtonV2
+                <IconButton
                   type="button"
                   variant="ghost-muted"
                   size="large"
@@ -75,8 +78,7 @@ export function createDesktop(
       toggle(options) {
         return surfaces.settings.add({
           id: options.id,
-          anchor:
-            '[data-component="settings-v2-row"]:has([data-action="settings-new-layout-designs"]), [data-component="settings-v2-row"]:has([data-action="settings-show-file-tree"])',
+          anchor: SETTINGS_TOGGLE_ANCHOR,
           placement: "after",
           mount: (target) =>
             render(() => {
@@ -87,7 +89,7 @@ export function createDesktop(
                     <span class="flex items-center gap-2">
                       {options.title}
                       {options.badge ? (
-                        <Tag variant="accent">{options.badge}</Tag>
+                        <Badge variant="accent">{options.badge}</Badge>
                       ) : undefined}
                     </span>
                   }
@@ -126,12 +128,8 @@ export function createDesktop(
     },
     panes: {
       add(options) {
-        const open = isCell<boolean>(options.open)
-          ? options.open
-          : createCell(options.open ?? true);
-        const size = isCell<number>(options.size)
-          ? options.size
-          : createCell(options.size);
+        const open = options.open ?? createCell(true);
+        const size = options.size;
         const target =
           options.surface === "review" ? surfaces.review : surfaces.layout;
         const pane = target.addPane({
@@ -250,17 +248,6 @@ function createTabs(document: Document): OpenCodeDesktop["tabs"] {
       button.click();
       return true;
     },
-    avatar(id) {
-      const avatar = find(id)?.querySelector<HTMLElement>(
-        '[data-slot="project-avatar-slot"]',
-      );
-      if (!avatar) return;
-      const fragment = document.createDocumentFragment();
-      avatar.childNodes.forEach((node) =>
-        fragment.append(node.cloneNode(true)),
-      );
-      return fragment;
-    },
   };
 }
 
@@ -284,28 +271,12 @@ function SettingsRow(props: {
   control: JSX.Element;
 }) {
   return (
-    <div data-component="settings-v2-row">
-      <div data-slot="settings-v2-row-copy">
-        <div data-slot="settings-v2-row-title">{props.title}</div>
-        <div data-slot="settings-v2-row-description">{props.description}</div>
+    <div data-component="settings-row">
+      <div data-slot="settings-row-copy">
+        <div data-slot="settings-row-title">{props.title}</div>
+        <div data-slot="settings-row-description">{props.description}</div>
       </div>
-      <div data-slot="settings-v2-row-control">{props.control}</div>
+      <div data-slot="settings-row-control">{props.control}</div>
     </div>
-  );
-}
-
-function useCell<T>(cell: Cell<T>) {
-  const [value, setValue] = createSignal(cell.get());
-  onCleanup(cell.subscribe(setValue));
-  return value;
-}
-
-function isCell<T>(value: unknown): value is Cell<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "get" in value &&
-    "set" in value &&
-    "subscribe" in value
   );
 }

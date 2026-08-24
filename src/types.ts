@@ -1,5 +1,5 @@
-import type { IconProps } from "@opencode-ai/ui/v2/icon";
-import type { OpencodeClient } from "@opencode-ai/sdk/client";
+import type { IconProps } from "@opencode-ai/ui/icon";
+import type { OpenCodeClient } from "@opencode-ai/client";
 import type { JSX } from "solid-js";
 
 export type Dispose = () => void;
@@ -17,6 +17,8 @@ export interface Cell<T> {
   get(): T;
   set(value: T | ((current: T) => T)): void;
   subscribe(listener: (value: T) => void): Dispose;
+  /** Runs immediately with the current value, then again on every change. */
+  effect(run: (value: T) => void): Dispose;
 }
 
 export interface StateValueOptions<T> {
@@ -170,7 +172,8 @@ export interface DesktopSettings {
     id: string;
     title: string;
     icon: DesktopIcon;
-    after?: "general" | "shortcuts";
+    /** Settings tab value to insert after, e.g. "shortcuts" or "extensions". */
+    after?: string;
     mount: Mount;
   }): Dispose;
 }
@@ -189,8 +192,8 @@ export interface DesktopPanes {
     id: string;
     surface?: "app" | "review";
     side: PaneSide;
-    size: number | Cell<number>;
-    open?: boolean | Cell<boolean>;
+    size: Cell<number>;
+    open?: Cell<boolean>;
     minSize?: number;
     maxSize?: number;
     resizable?: boolean;
@@ -215,7 +218,6 @@ export interface DesktopTabs {
   activate(id: string): boolean;
   close(id: string): boolean;
   create(): boolean;
-  avatar(id: string): DocumentFragment | undefined;
 }
 
 export interface OpenCodeDesktop {
@@ -240,10 +242,7 @@ export interface OpenCodeSessionContext {
 export interface OpenCodeSDK {
   currentSession: Cell<OpenCodeSessionContext | undefined>;
   connection(server?: string): Promise<OpenCodeConnection>;
-  client(options?: {
-    server?: string;
-    directory?: string;
-  }): Promise<OpencodeClient>;
+  client(options?: { server?: string }): Promise<OpenCodeClient>;
 }
 
 export interface ExtensionContext {
@@ -280,10 +279,4 @@ export interface MainExtensionContext {
 export interface ExtensionHost {
   register(extension: ExtensionDefinition): Dispose;
   dispose(): void;
-}
-
-export interface ExtensionHostOptions {
-  document?: Document;
-  storage?: Storage;
-  onError?: (error: unknown, extensionID: string) => void;
 }

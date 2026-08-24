@@ -16,8 +16,7 @@ export default defineExtension({
       void pending.catch((error) => console.error("[keep-awake]", error));
     };
 
-    synchronize(enabled.get());
-    ocdx.lifecycle.own(enabled.subscribe(synchronize));
+    ocdx.lifecycle.own(enabled.effect(synchronize));
     ocdx.desktop.titlebar.toggle({
       id: "toggle",
       label: "Keep display awake",

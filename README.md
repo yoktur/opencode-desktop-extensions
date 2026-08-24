@@ -219,6 +219,12 @@ enabled.set((current) => !current);
 enabled.subscribe(console.log);
 ```
 
+`effect` runs immediately with the current value and again on every change, so applying state to the world is one line:
+
+```ts
+ocdx.lifecycle.own(enabled.effect(applyVisibility));
+```
+
 For structured state, decoding is explicit and type-safe:
 
 ```ts
@@ -244,9 +250,9 @@ const data = await ocdx.assets
 
 No extension ID is repeated in source code.
 
-### OpenCode Server SDK
+### OpenCode Server Client
 
-OCDX exposes the published `@opencode-ai/sdk` client with Desktop's local server credentials already configured:
+OCDX exposes the published `@opencode-ai/client` promise client with Desktop's local server credentials already configured:
 
 ```ts
 const client = await ocdx.opencode.client();
@@ -268,12 +274,11 @@ ocdx.lifecycle.own(
 );
 ```
 
-Select another known HTTP server or scope requests to a directory when creating a client:
+Select another known HTTP server when creating a client; V2 requests scope to directories and locations through their request inputs:
 
 ```ts
 const client = await ocdx.opencode.client({
   server: "https://opencode.example.com",
-  directory: "/workspace/project",
 });
 ```
 
@@ -324,15 +329,15 @@ ocdx.desktop.settings.toggle({
 Settings pages use the real Desktop navigation and accept extension-owned content:
 
 ```tsx
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2";
+import { Button } from "@opencode-ai/ui/button";
 import { mountSolid } from "@hona/ocdx/solid";
 
 ocdx.desktop.settings.page({
   id: "my-extension",
   title: "My Extension",
-  icon: "settings-gear",
+  icon: "sliders",
   after: "shortcuts",
-  mount: mountSolid(() => <ButtonV2>Run action</ButtonV2>),
+  mount: mountSolid(() => <Button>Run action</Button>),
 });
 ```
 
@@ -403,7 +408,7 @@ For experiments that do not fit semantic contribution points, `ocdx.unsafe` expo
 Once published:
 
 ```sh
-bun add @hona/ocdx @opencode-ai/sdk @opencode-ai/ui solid-js
+bun add @hona/ocdx @opencode-ai/client @opencode-ai/ui solid-js
 ```
 
 Public exports:

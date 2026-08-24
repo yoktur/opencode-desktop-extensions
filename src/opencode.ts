@@ -1,7 +1,4 @@
-import {
-  createOpencodeClient,
-  type OpencodeClient,
-} from "@opencode-ai/sdk/client";
+import { OpenCode, type OpenCodeClient } from "@opencode-ai/client";
 import { createCell } from "./state";
 import type {
   Dispose,
@@ -32,7 +29,7 @@ export function createOpenCodeSDK(
   );
 
   let sidecar: Promise<OpenCodeConnection> | undefined;
-  const clients = new Map<string, Promise<OpencodeClient>>();
+  const clients = new Map<string, OpenCodeClient>();
 
   const connection = async (
     server = currentSession.get()?.server ?? "sidecar",
@@ -54,23 +51,18 @@ export function createOpenCodeSDK(
     connection,
     async client(options = {}) {
       const resolved = await connection(options.server);
-      const key = `${resolved.key}\0${options.directory ?? ""}`;
-      let client = clients.get(key);
-      if (!client) {
-        client = Promise.resolve(
-          createOpencodeClient({
-            baseUrl: resolved.url,
-            directory: options.directory,
-            headers:
-              resolved.username && resolved.password
-                ? {
-                    Authorization: `Basic ${btoa(`${resolved.username}:${resolved.password}`)}`,
-                  }
-                : undefined,
-          }),
-        );
-        clients.set(key, client);
-      }
+      const existing = clients.get(resolved.key);
+      if (existing) return existing;
+      const client = OpenCode.make({
+        baseUrl: resolved.url,
+        headers:
+          resolved.username && resolved.password
+            ? {
+                Authorization: `Basic ${btoa(`${resolved.username}:${resolved.password}`)}`,
+              }
+            : undefined,
+      });
+      clients.set(resolved.key, client);
       return client;
     },
   };

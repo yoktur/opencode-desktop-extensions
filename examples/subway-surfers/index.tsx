@@ -1,5 +1,5 @@
-import { Icon } from "@opencode-ai/ui/v2/icon";
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2";
+import { Icon } from "@opencode-ai/ui/icon";
+import { IconButton } from "@opencode-ai/ui/icon-button";
 import { defineExtension } from "@hona/ocdx";
 import { mountSolid, useCell } from "@hona/ocdx/solid";
 import { Show } from "solid-js";
@@ -27,7 +27,7 @@ export default defineExtension({
               <img src={ICON} alt="" />
               <span>Subway Surfers</span>
             </div>
-            <IconButtonV2
+            <IconButton
               type="button"
               variant="ghost-muted"
               size="normal"

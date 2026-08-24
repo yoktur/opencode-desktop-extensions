@@ -6,6 +6,12 @@ export function createCell<T>(
 ): Cell<T> {
   let value = initial;
   const listeners = new Set<(value: T) => void>();
+  const subscribe = (listener: (value: T) => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
   return {
     get: () => value,
     set(next) {
@@ -16,9 +22,10 @@ export function createCell<T>(
       onChange?.(value);
       listeners.forEach((listener) => listener(value));
     },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+    subscribe,
+    effect(run) {
+      run(value);
+      return subscribe(run);
     },
   };
 }

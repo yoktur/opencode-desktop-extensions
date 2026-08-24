@@ -1,5 +1,5 @@
-import { Icon } from "@opencode-ai/ui/v2/icon";
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2";
+import { Icon } from "@opencode-ai/ui/icon";
+import { IconButton } from "@opencode-ai/ui/icon-button";
 import { defineExtension, type DesktopTab } from "@hona/ocdx";
 import { mountSolid } from "@hona/ocdx/solid";
 import { For } from "solid-js";
@@ -88,8 +88,7 @@ export default defineExtension({
 
     const applyVisibility = (value: boolean) =>
       document.body.toggleAttribute("data-opencode-mod-vertical-tabs", value);
-    applyVisibility(enabled.get());
-    ocdx.lifecycle.own(enabled.subscribe(applyVisibility));
+    ocdx.lifecycle.own(enabled.effect(applyVisibility));
     ocdx.lifecycle.own(() =>
       document.body.removeAttribute("data-opencode-mod-vertical-tabs"),
     );
@@ -138,13 +137,13 @@ export default defineExtension({
                     <span
                       class="oc-mod-vertical-tab-avatar"
                       ref={(element) => {
-                        const avatar = ocdx.desktop.tabs.avatar(tab.id);
+                        const avatar = tabAvatar(tab.id);
                         if (avatar) element.replaceChildren(avatar);
                       }}
                     />
                     <span class="oc-mod-vertical-tab-title">{tab.title}</span>
                   </button>
-                  <IconButtonV2
+                  <IconButton
                     type="button"
                     variant="ghost-muted"
                     size="small"
@@ -185,6 +184,16 @@ export default defineExtension({
     );
   },
 });
+
+function tabAvatar(id: string) {
+  const avatar = document.querySelector<HTMLElement>(
+    `[data-titlebar-tab-slot][data-tab-key="${CSS.escape(id)}"] [data-slot="project-avatar-slot"]`,
+  );
+  if (!avatar) return;
+  const fragment = document.createDocumentFragment();
+  avatar.childNodes.forEach((node) => fragment.append(node.cloneNode(true)));
+  return fragment;
+}
 
 function orderTabs(tabs: readonly DesktopTab[], order: string[]) {
   const byID = new Map(tabs.map((tab) => [tab.id, tab]));
