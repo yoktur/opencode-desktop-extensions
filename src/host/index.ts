@@ -15,9 +15,10 @@ import { HOST_STYLE } from "./css";
 import { createMounter, type ContributionRecord } from "./mounts";
 import { createPaneSurface } from "./panes";
 import { createSettingsPageSurface } from "./settings-pages";
+import { createSidePanelSurface } from "./side-panel";
 
 const SETTINGS_TARGET =
-  '[data-component="dialog-v2"][data-variant="settings"] .settings-tab-body';
+  'main [data-component="tabs-v2"][data-variant="settings"] .settings-tab-body';
 
 export function createExtensionHost(): ExtensionHost {
   const doc = document;
@@ -34,6 +35,7 @@ export function createExtensionHost(): ExtensionHost {
   const mounter = createMounter(doc, report);
   const panes = createPaneSurface(doc, mounter);
   const settingsPages = createSettingsPageSurface(doc, report);
+  const sidePanel = createSidePanelSurface(doc, report);
 
   const reconcile = () => {
     const titlebarTarget = doc.getElementById("opencode-titlebar-right");
@@ -67,6 +69,7 @@ export function createExtensionHost(): ExtensionHost {
     });
     settingsPages.reconcile();
     panes.reconcile();
+    sidePanel.reconcile();
   };
 
   let queued = false;
@@ -78,7 +81,10 @@ export function createExtensionHost(): ExtensionHost {
       reconcile();
     });
   });
-  observer.observe(doc.body, { childList: true, subtree: true });
+  observer.observe(doc.body, {
+    childList: true, subtree: true, attributes: true,
+    attributeFilter: ["href", "data-active"],
+  });
 
   const addContribution = (
     records: Set<ContributionRecord>,
@@ -205,7 +211,13 @@ export function createExtensionHost(): ExtensionHost {
         return fetch(this.url(value), init);
       },
     };
-    const desktop = createDesktop(unsafe, doc, own);
+    const desktop = createDesktop(unsafe, doc, own, {
+      add(options) {
+        const tab = sidePanel.add(extension.id, options);
+        own(tab.dispose);
+        return tab;
+      },
+    });
     const context: ExtensionContext = {
       id: extension.id,
       lifecycle,
@@ -245,6 +257,7 @@ export function createExtensionHost(): ExtensionHost {
       settings.forEach(mounter.unmount);
       settingsPages.unmountAll();
       panes.unmountAll();
+      sidePanel.dispose();
       style.remove();
     },
   };

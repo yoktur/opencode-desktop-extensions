@@ -9,6 +9,14 @@ await mkdir("dist/extensions", { recursive: true });
 await mkdir("dist/builtin", { recursive: true });
 await mkdir("dist/.entries", { recursive: true });
 
+// Own the archive reader: recent Desktop payloads no longer ship zip.js.
+const archive = await Bun.build({
+  entrypoints: ["launcher/src/archive.cjs"],
+  target: "node", format: "cjs", external: ["electron"],
+});
+if (!archive.success) throw new Error("Could not bundle the OCDX archive reader");
+await Bun.write("dist/archive.cjs", archive.outputs[0]);
+
 await build({
   configFile: false,
   plugins: [solid()],

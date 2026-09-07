@@ -54,7 +54,8 @@
     "build:all": "bun run build && cargo build --manifest-path launcher/Cargo.toml --release --locked && bun run script/package.ts",
     "launch": "bun run script/launch.ts",
     "prepublishOnly": "bun run typecheck && bun run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/channel.test.cjs && playwright test"
   },
   "peerDependencies": {
     "@opencode-ai/client": "*",
@@ -62,11 +63,12 @@
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
-    "@opencode-ai/client": "0.0.0-dev-18060",
-    "@opencode-ai/ui": "0.0.0-dev-18060",
+    "@opencode-ai/client": "^0.0.0-beta-19271",
+    "@opencode-ai/ui": "^0.0.0-beta-19271",
+    "@playwright/test": "^1.63.0",
     "@solidjs/meta": "0.29.4",
-    "@zip.js/zip.js": "2.7.62",
     "@types/bun": "1.3.13",
+    "@zip.js/zip.js": "2.7.62",
     "electron": "42.3.3",
     "solid-js": "1.9.10",
     "typescript": "5.8.2",

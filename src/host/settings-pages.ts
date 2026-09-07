@@ -51,7 +51,7 @@ export function createSettingsPageSurface(doc: Document, report: Report) {
 
   const reconcile = () => {
     const tabs = doc.querySelector<HTMLElement>(
-      '[data-component="dialog-v2"][data-variant="settings"] [data-component="tabs-v2"][data-variant="settings"]',
+      'main [data-component="tabs-v2"][data-variant="settings"]',
     );
     const list = tabs?.querySelector<HTMLElement>('[data-slot="tabs-v2-list"]');
     pages.forEach((record) => {
@@ -65,7 +65,7 @@ export function createSettingsPageSurface(doc: Document, report: Report) {
 
       const navigation = doc.createElement("div");
       navigation.dataset.slot = "tabs-v2-trigger-wrapper";
-      const value = `ocdx-${record.id}`;
+      const value = `ocdx-${encodeURIComponent(record.extensionID)}-${encodeURIComponent(record.id)}`;
       navigation.dataset.value = value;
       const button = doc.createElement("button");
       button.type = "button";

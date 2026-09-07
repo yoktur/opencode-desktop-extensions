@@ -1,4 +1,17 @@
 export const HOST_STYLE = `
+[data-ocdx-side-active] > [data-slot="tabs-content"] { display: none !important; }
+[data-ocdx-side-content] {
+  flex: 1; min-height: 0; overflow: hidden;
+  background: var(--v2-background-bg-base);
+}
+[data-ocdx-side-content][hidden] { display: none !important; }
+[data-ocdx-side-tab] [role="tab"] { gap: 6px; }
+[data-ocdx-side-tab] [role="tab"]:focus-visible { outline: 2px solid var(--border-active); outline-offset: -3px; }
+[data-ocdx-side-badge] {
+  font-size: 11px; line-height: 16px; min-width: 16px; padding-inline: 4px;
+  border-radius: 4px; background: var(--surface-raised-base); color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
 [data-opencode-mod-layout-shell] {
   --opencode-mod-layout-left: 0px;
   --opencode-mod-layout-right: 0px;

@@ -32,7 +32,11 @@ The extension ID, name, and version come from `manifest.json`. The build automat
 
 OCDX uses [Electron-Hook](https://github.com/Hona/Electron-Hook) to start the installed production app with a temporary in-memory bootstrap. Its macOS backend uses dyld interposition while leaving the installed app and its signature untouched.
 
-OpenCode's files, signatures, updater, and normal launcher remain untouched. The stable OCDX runtime loads independent `.ocdx` archives from a mods folder, so changing extensions never requires rebuilding the Rust launcher.
+OCDX runs the installed OpenCode payload in its own **OCDX** channel. Its app identity, single-instance lock, Desktop storage, Chromium profile, server registration, credentials, configuration, cache, and session database are separate from OpenCode Beta and Stable. The runtime loads independent `.ocdx` archives from a mods folder.
+
+The channel lives under `%APPDATA%/OCDX` on Windows and `~/Library/Application Support/OCDX` on macOS. `OCDX_HOME` overrides this root for isolated testing. The service defaults to port **49376**; its preference is in `config/opencode/service.json`. Desktop state is in `desktop/`, Chromium state in `session/`, and the server database in `data/opencode/ocdx.db`.
+
+The source installation owns application updates. OCDX disables the injected application's updater and protocol registration, so it cannot update or take over the source app. Update OpenCode normally, then start OCDX with the updated payload. Existing Beta/Stable sessions and sign-ins are not imported automatically.
 
 ```text
 release/
@@ -86,7 +90,7 @@ bun run build:all
 bun run launch
 ```
 
-Close an existing OpenCode Desktop instance before launching. To target another production installation:
+OpenCode Beta or Stable can stay open while OCDX runs. To target another production installation:
 
 ```sh
 bun run launch -- --executable "D:\Apps\OpenCode\OpenCode.exe"
@@ -252,7 +256,7 @@ No extension ID is repeated in source code.
 
 ### OpenCode Server Client
 
-OCDX exposes the published `@opencode-ai/client` promise client with Desktop's local server credentials already configured:
+OCDX exposes the published `@opencode-ai/client` promise client with its own channel's local server credentials already configured:
 
 ```ts
 const client = await ocdx.opencode.client();
@@ -282,7 +286,7 @@ const client = await ocdx.opencode.client({
 });
 ```
 
-The built-in sidecar is authenticated automatically. Plain HTTP server keys resolve directly; WSL and SSH credentials are not exposed by the current production preload contract.
+The built-in sidecar is authenticated through OCDX's main-process bridge. This supports current Desktop builds, which no longer expose `window.api`. Plain HTTP server keys resolve directly; WSL and SSH credentials are not exposed.
 
 ## Desktop V2 APIs
 
@@ -381,6 +385,36 @@ ocdx.desktop.tabs.create();
 ```
 
 An extension decides how to present those tabs using normal Solid code and official OpenCode components.
+
+## Session side-panel tabs
+
+Add extension content beside browser tabs, open files, and Review. This primitive works for inspectors, test results, dashboards, and other session-side tools:
+
+```tsx
+const tab = ocdx.desktop.sidePanel.add({
+  id: "inspector",
+  title: "Inspector",
+  icon: "code",
+  badge: ocdx.state.number("pending", 0),
+  mount: mountSolid(() => <Inspector />),
+});
+
+tab.show(); // Reveals the panel and selects the tab.
+tab.hide(); // Returns to native content; keeps the extension connected.
+ocdx.lifecycle.own(tab.active.effect((active) => updateVisibility(active)));
+```
+
+`active` is read-only and is false when the side panel is hidden. `badge` accepts a read-only cell containing text, a number, or undefined; zero and undefined hide it. Registration IDs are scoped to the extension. Disabling the extension disposes its tab, mount, and listeners automatically; `tab.dispose()` removes it earlier.
+
+Keep connections and drafts in `activate`, outside `mount`. Switching tabs keeps mounted content; closing the panel or changing its host can remount it. The mount's abort signal and returned disposer own view resources. Selecting a different session clears selection. On the home/new-session screen, no session panel is available; the extension can keep its connection alive there.
+
+OCDX coordinates native browser visibility, restores native tabs, and supports the complete row's Arrow/Home/End keyboard navigation in LTR and RTL. It targets current Desktop DOM contracts, not private Solid internals.
+
+### Compatibility checks
+
+Windows verification targets OpenCode Desktop **0.0.0-beta-19278** and published UI/client packages **0.0.0-beta-19271**. Run `bun typecheck`, `bun run test`, and, after `bun run build`, `cargo test --manifest-path launcher/Cargo.toml --locked`. Browser tests use the published production Tabs component and cover native/extension switching, drafts, lifecycle, session changes, hidden panels, and RTL keyboard navigation. The channel test verifies that host environment resets cannot redirect storage or child processes into Beta. Live checks also cover the native browser view and full-page Settings.
+
+The launcher bundles its own ZIP reader rather than depending on modules inside the source application's ASAR.
 
 ## Solid Integration
 

@@ -8,6 +8,7 @@ import { useCell } from "./solid";
 import { createCell } from "./state";
 import type {
   DesktopIcon,
+  DesktopSidePanel,
   DesktopTab,
   Dispose,
   OpenCodeDesktop,
@@ -21,6 +22,7 @@ export function createDesktop(
   surfaces: UnsafeDesktopSurfaces,
   document: Document,
   own: (dispose: Dispose) => Dispose,
+  sidePanel: DesktopSidePanel,
 ): OpenCodeDesktop {
   const icon = (value: DesktopIcon) =>
     typeof value === "function" ? value() : <Icon name={value} />;
@@ -165,6 +167,7 @@ export function createDesktop(
       },
     },
     tabs: createTabs(document),
+    sidePanel,
   };
 }
 

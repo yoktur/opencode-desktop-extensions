@@ -14,8 +14,8 @@ await Promise.all([
   rm("release/assets", { recursive: true, force: true }),
 ]);
 const artifacts: Array<[string, string]> = [
-  [`launcher/target/release/ocdx${extension}`, `release/ocdx${extension}`],
-  [`launcher/target/release/${library}`, `release/${library}`],
+  [`${process.env.CARGO_TARGET_DIR ?? "launcher/target"}/release/ocdx${extension}`, `release/ocdx${extension}`],
+  [`${process.env.CARGO_TARGET_DIR ?? "launcher/target"}/release/${library}`, `release/${library}`],
   ["dist/runtime.js", "release/runtime.js"],
 ];
 const currentArtifacts = new Set(artifacts.map(([, destination]) => destination));

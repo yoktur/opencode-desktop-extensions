@@ -5,6 +5,8 @@ const { app, net, protocol, utilityProcess, webContents } = require("electron")
 
 const runtimePath = process.env.MODLOADER_MOD_ENTRYPOINT
 const originalAsar = path.resolve(__dirname, process.env.MODLOADER_ORIGINAL_ASAR_RELATIVE)
+const { configureChannel } = require("./channel.cjs")
+const channel = configureChannel(app, path.resolve(process.env.OCDX_HOME || path.join(app.getPath("appData"), "OCDX")))
 const extensions = []
 const roots = new Map()
 const mainExtensions = new Map()
@@ -18,6 +20,15 @@ const log = (message) => {
   fs.appendFileSync(process.env.OCDX_LOG, `${message}\n`)
 }
 log(`bootstrap started in pid ${process.pid}`)
+log(`OCDX channel: ${channel.root}`)
+// Updating through the injected host would update the source installation.
+// The source app owns its updater; OCDX consumes that payload on its next launch.
+const { autoUpdater } = require(path.join(originalAsar, "node_modules", "electron-updater"))
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
+autoUpdater.checkForUpdates = async () => null
+autoUpdater.downloadUpdate = async () => []
+autoUpdater.quitAndInstall = () => { throw new Error("Update the source OpenCode installation, then relaunch OCDX.") }
 const discovered = discoverExtensions().catch((error) => {
   log(`extension discovery failed: ${error.stack || error}`)
 })
@@ -94,6 +105,16 @@ protocol.registerSchemesAsPrivileged = (schemes) => {
 void app.whenReady().then(async () => {
   protocol.handle("ocdx", async (request) => {
     const url = new URL(request.url)
+    if (url.host === "host" && url.pathname === "/connection") {
+      try {
+        const registration = JSON.parse(await fs.promises.readFile(path.join(channel.directories.state, "opencode", "service.json"), "utf8"))
+        if (typeof registration.url !== "string" || typeof registration.password !== "string")
+          return json({ error: "OCDX service registration is incomplete" }, 503)
+        return json({ key: "sidecar", url: registration.url, username: "opencode", password: registration.password })
+      } catch {
+        return json({ error: "OCDX service is not ready" }, 503)
+      }
+    }
     if (url.host === "manager") return handleManagerRequest(request, url)
     if (url.host === "main") return handleMainRequest(request, url)
     const parts = url.pathname.split("/").filter(Boolean)
@@ -430,10 +451,8 @@ async function installArchive(name, bytes) {
 }
 
 async function loadArchive(archivePath) {
-  const { BlobReader, TextWriter, Uint8ArrayWriter, ZipReader } = require(
-    path.join(originalAsar, "node_modules", "@zip.js", "zip.js", "index.cjs"),
-  )
-  const archive = new ZipReader(new BlobReader(new Blob([fs.readFileSync(archivePath)])))
+  const { BlobReader, TextWriter, Uint8ArrayWriter, ZipReader } = require("./archive.cjs")
+  const archive = new ZipReader(new BlobReader(new Blob([fs.readFileSync(archivePath)])), { useWebWorkers: false })
   const entries = await archive.getEntries()
   if (entries.length > 1_024) throw new Error("Archive contains more than 1024 entries")
   const manifestEntry = entries.find((entry) => entry.filename === "manifest.json")

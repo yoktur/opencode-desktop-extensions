@@ -2,5 +2,8 @@ node_modules/
 dist/
 release/
 launcher/target/
+launcher/target-next/
 *.log
 .DS_Store
+test-results/
+playwright-report/

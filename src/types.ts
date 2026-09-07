@@ -220,11 +220,34 @@ export interface DesktopTabs {
   create(): boolean;
 }
 
+export type ReadonlyCell<T> = Pick<Cell<T>, "get" | "subscribe" | "effect">;
+
+export interface SidePanelTab {
+  /** True only while this tab is selected in a visible session side panel. */
+  active: ReadonlyCell<boolean>;
+  /** Reveal the session side panel and select this tab. */
+  show(): void;
+  /** Return to the native panel content without disconnecting the extension. */
+  hide(): void;
+  dispose(): void;
+}
+
+export interface DesktopSidePanel {
+  add(options: {
+    id: string;
+    title: string;
+    icon?: DesktopIcon;
+    badge?: ReadonlyCell<string | number | undefined>;
+    mount: Mount;
+  }): SidePanelTab;
+}
+
 export interface OpenCodeDesktop {
   titlebar: DesktopTitlebar;
   settings: DesktopSettings;
   panes: DesktopPanes;
   tabs: DesktopTabs;
+  sidePanel: DesktopSidePanel;
 }
 
 export interface OpenCodeConnection {

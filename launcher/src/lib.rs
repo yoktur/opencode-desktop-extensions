@@ -128,10 +128,11 @@ pub fn extension_directories() -> ExtensionDirectories {
     let install = env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf));
-    let user = dirs::data_dir()
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("OCDX")
-        .join("mods");
+    let user = env::var_os("OCDX_HOME").map(PathBuf::from).unwrap_or_else(|| {
+        dirs::data_dir()
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+            .join("OCDX")
+    }).join("mods");
     let config = user.parent().map_or_else(
         || PathBuf::from("config.json"),
         |directory| directory.join("config.json"),
@@ -190,6 +191,12 @@ pub fn replacement_asar(executable: &Path, runtime: &Path) -> Result<PathBuf, St
     writer
         .write_file("index.js", include_bytes!("bootstrap.cjs"), false)
         .map_err(|error| format!("cannot add hook bootstrap to ASAR: {error}"))?;
+    writer
+        .write_file("channel.cjs", include_bytes!("channel.cjs"), false)
+        .map_err(|error| format!("cannot add OCDX channel to ASAR: {error}"))?;
+    writer
+        .write_file("archive.cjs", include_bytes!("../../dist/archive.cjs"), false)
+        .map_err(|error| format!("cannot add archive reader to ASAR: {error}"))?;
     writer
         .write_file(
             "package.json",

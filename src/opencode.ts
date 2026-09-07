@@ -7,14 +7,6 @@ import type {
   OpenCodeSDK,
 } from "./types";
 
-type DesktopBridge = {
-  awaitInitialization(): Promise<{
-    url: string;
-    username: string | null;
-    password: string | null;
-  }>;
-};
-
 export function createOpenCodeSDK(
   desktop: OpenCodeDesktop,
   own: (dispose: Dispose) => Dispose,
@@ -69,13 +61,7 @@ export function createOpenCodeSDK(
 }
 
 async function resolveSidecar(): Promise<OpenCodeConnection> {
-  const bridge = (window as unknown as { api?: DesktopBridge }).api;
-  if (!bridge) throw new Error("OpenCode Desktop preload API is unavailable");
-  const server = await bridge.awaitInitialization();
-  return {
-    key: "sidecar",
-    url: server.url,
-    username: server.username ?? undefined,
-    password: server.password ?? undefined,
-  };
+  const response = await fetch("ocdx://host/connection");
+  if (!response.ok) throw new Error("The OCDX background service is not ready");
+  return response.json();
 }
