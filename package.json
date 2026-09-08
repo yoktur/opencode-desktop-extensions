@@ -1,6 +1,6 @@
 {
   "name": "@hona/ocdx",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Build extensions for OpenCode Desktop",
   "keywords": [
     "opencode",
@@ -31,6 +31,7 @@
     "dist/solid.d.ts",
     "dist/solid.js",
     "dist/types.d.ts",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],
@@ -58,13 +59,13 @@
     "test": "node --test test/channel.test.cjs && playwright test"
   },
   "peerDependencies": {
-    "@opencode-ai/client": "*",
-    "@opencode-ai/ui": "*",
+    "@opencode-ai/client": "0.0.0-beta-19271",
+    "@opencode-ai/ui": "0.0.0-beta-19271",
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
-    "@opencode-ai/client": "^0.0.0-beta-19271",
-    "@opencode-ai/ui": "^0.0.0-beta-19271",
+    "@opencode-ai/client": "0.0.0-beta-19271",
+    "@opencode-ai/ui": "0.0.0-beta-19271",
     "@playwright/test": "^1.63.0",
     "@solidjs/meta": "0.29.4",
     "@types/bun": "1.3.13",

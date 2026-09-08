@@ -1,5 +1,7 @@
 import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 
+const { version } = await Bun.file("package.json").json();
+
 const extension = process.platform === "win32" ? ".exe" : "";
 const library =
   process.platform === "win32"
@@ -87,8 +89,8 @@ async function packageMacApp() {
   <key>CFBundleIdentifier</key><string>dev.hona.ocdx</string>
   <key>CFBundleName</key><string>OCDX</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>${version}</string>
+  <key>CFBundleVersion</key><string>${version}</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
