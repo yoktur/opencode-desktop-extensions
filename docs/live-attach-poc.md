@@ -57,9 +57,12 @@ operation.
 ## macOS Bootstrap
 
 1. Return without side effects unless `OPENCODE_CLIENT=desktop`.
-2. Walk parents from the server/plugin PID with `ps`.
-3. Verify the ancestor command is an OpenCode or OpenCode Beta app main
-   executable and has no Electron `--type` child-process flag.
+2. Walk parents from the server/plugin PID with `ps`. If the persistent service
+   has been orphaned under PID 1, fall back to exactly one same-user OpenCode
+   main candidate; zero or multiple candidates fail closed.
+3. Verify the process command is an OpenCode or OpenCode Beta app main
+   executable with no Electron `--type` child-process flag, then verify the
+   app's `CFBundleIdentifier` from `Info.plist`.
 4. Use `lsof` to discover inspector ports owned by that exact PID and probe
    their `/json/list` endpoints. No fixed port is used.
 5. If no inspector is already open, send `SIGUSR1` to the verified PID and wait
@@ -173,7 +176,9 @@ like an OCDX archive. This PoC does not introduce a sandbox or permission model.
 ## Upstream Behavior Relied On
 
 - The Desktop sidecar exports `OPENCODE_CLIENT=desktop`.
-- The server plugin process remains a descendant of Electron main.
+- The server plugin process is normally a descendant of Electron main, or its
+  persistent service is orphaned and there is exactly one same-user verified
+  OpenCode main process.
 - The OpenCode app executable and renderer URL retain their current identities.
 - Electron main can load `electron` through a require created from
   `process.execPath`.

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createLiveHostExpression } from "./host";
 import { InspectorSession, discoverInspector, waitForInspector } from "./inspector";
-import { findOpenCodeDesktopMain } from "./process";
+import {
+  findOpenCodeDesktopMain,
+  verifyOpenCodeDesktopBundle,
+} from "./process";
 
 export interface LiveDesktopExtension {
   id: string;
@@ -32,10 +35,14 @@ export async function attachDesktopExtension(
 ): Promise<LiveAttachResult> {
   const log = options.log ?? ((message) => console.error(`[ocdx-live] ${message}`));
   if (process.env.OPENCODE_CLIENT !== "desktop") {
-    return { status: "skipped", reason: "OPENCODE_CLIENT is not desktop" };
+    const reason = "OPENCODE_CLIENT is not desktop";
+    log(reason);
+    return { status: "skipped", reason };
   }
   if (process.platform !== "darwin") {
-    return { status: "skipped", reason: "live attach currently supports macOS only" };
+    const reason = "live attach currently supports macOS only";
+    log(reason);
+    return { status: "skipped", reason };
   }
   if (!extension.id || !extension.source) {
     return { status: "failed", reason: "extension id and source are required" };
@@ -44,7 +51,12 @@ export async function attachDesktopExtension(
   try {
     const target = await findOpenCodeDesktopMain();
     if (!target) {
-      throw new Error("OpenCode Desktop Electron main process was not found in the plugin ancestry");
+      throw new Error(
+        "OpenCode Desktop Electron main process was not uniquely identified",
+      );
+    }
+    if (!(await verifyOpenCodeDesktopBundle(target))) {
+      throw new Error("OpenCode Desktop process failed app bundle verification");
     }
 
     let inspector = await discoverInspector(target.pid);
@@ -104,4 +116,8 @@ export async function attachDesktopExtension(
 }
 
 export { createLiveHostExpression, installLiveHost } from "./host";
-export { findOpenCodeDesktopMain, isOpenCodeDesktopMain } from "./process";
+export {
+  findOpenCodeDesktopMain,
+  isOpenCodeDesktopMain,
+  verifyOpenCodeDesktopBundle,
+} from "./process";

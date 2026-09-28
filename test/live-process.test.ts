@@ -45,7 +45,44 @@ describe("OpenCode Desktop process detection", () => {
       [300, { pid: 300, ppid: 200, command: "/usr/local/bin/bun" }],
       [200, { pid: 200, ppid: 1, command: "/bin/zsh" }],
     ]);
-    expect(await findOpenCodeDesktopMain(300, async (pid) => processes.get(pid)))
-      .toBeUndefined();
+    expect(
+      await findOpenCodeDesktopMain(
+        300,
+        async (pid) => processes.get(pid),
+        async () => [],
+      ),
+    ).toBeUndefined();
+  });
+
+  test("accepts one same-user main process when the service is orphaned", async () => {
+    const sidecar = { pid: 300, ppid: 1, uid: 501, command: "opencode-cli serve --service" };
+    expect(
+      await findOpenCodeDesktopMain(
+        300,
+        async (pid) => (pid === 300 ? sidecar : undefined),
+        async () => [{ ...main, uid: 501 }],
+        501,
+      ),
+    ).toEqual({ ...main, uid: 501 });
+  });
+
+  test("fails closed when more than one main process is a candidate", async () => {
+    const sidecar = { pid: 300, ppid: 1, uid: 501, command: "opencode-cli serve --service" };
+    expect(
+      await findOpenCodeDesktopMain(
+        300,
+        async (pid) => (pid === 300 ? sidecar : undefined),
+        async () => [
+          { ...main, uid: 501 },
+          {
+            ...main,
+            pid: 101,
+            uid: 501,
+            command: "/Applications/OpenCode Beta.app/Contents/MacOS/OpenCode Beta",
+          },
+        ],
+        501,
+      ),
+    ).toBeUndefined();
   });
 });

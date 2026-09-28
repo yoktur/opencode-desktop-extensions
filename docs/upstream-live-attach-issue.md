@@ -28,10 +28,12 @@ SIGUSR1
   -> existing OCDX renderer runtime and semantic contribution API
 ```
 
-The normal server plugin first requires `OPENCODE_CLIENT=desktop`, walks only
-its own process ancestry, and verifies the expected OpenCode `.app` Electron
-main command before signaling anything. It discovers inspector endpoints owned
-by that PID with `lsof` rather than assuming port 9229. If no inspector is open,
+The normal server plugin first requires `OPENCODE_CLIENT=desktop` and walks its
+own process ancestry. Because the persistent service can be orphaned under PID
+1 after Desktop restarts, the fallback requires exactly one same-user OpenCode
+main candidate. It verifies the expected `.app` main command and bundle ID
+before signaling anything. It discovers inspector endpoints owned by that PID
+with `lsof` rather than assuming port 9229. If no inspector is open,
 it sends `SIGUSR1`, connects, installs an idempotent
 `globalThis.__ocdxLiveHost`, registers the bundled desktop entry, and closes the
 inspector it opened.
