@@ -329,7 +329,7 @@ var OPEN_CODE_MAIN = /^\/.+\/OpenCode(?: Beta)?\.app\/Contents\/MacOS\/OpenCode(
 function isOpenCodeDesktopMain(process2) {
   return OPEN_CODE_MAIN.test(process2.command) && !process2.command.includes(" --type=") && !process2.command.includes(" Helper");
 }
-async function findOpenCodeDesktopMain(startPid = process.pid, readProcess = readMacOSProcess) {
+async function findOpenCodeDesktopMain(startPid = process.pid, readProcess = readMacOSProcess, listProcesses = listMacOSProcesses, uid = process.getuid?.()) {
   const visited = new Set;
   let pid = startPid;
   while (pid > 1 && !visited.has(pid) && visited.size < 64) {
@@ -343,7 +343,29 @@ async function findOpenCodeDesktopMain(startPid = process.pid, readProcess = rea
       break;
     pid = current.ppid;
   }
-  return;
+  const candidates = (await listProcesses()).filter((candidate) => isOpenCodeDesktopMain(candidate) && (uid === undefined || candidate.uid === undefined || candidate.uid === uid));
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+async function verifyOpenCodeDesktopBundle(target) {
+  const executable = target.command.match(OPEN_CODE_MAIN)?.[0].trim();
+  const marker = ".app/Contents/MacOS/";
+  const index = executable?.indexOf(marker) ?? -1;
+  if (!executable || index === -1)
+    return false;
+  const plist = `${executable.slice(0, index + 4)}/Contents/Info.plist`;
+  try {
+    const identifier = (await execFileText2("/usr/bin/plutil", [
+      "-extract",
+      "CFBundleIdentifier",
+      "raw",
+      "-o",
+      "-",
+      plist
+    ])).trim();
+    return /^ai\.opencode\.desktop(?:\.beta)?$/.test(identifier);
+  } catch {
+    return false;
+  }
 }
 async function readMacOSProcess(pid) {
   try {
@@ -359,10 +381,38 @@ async function readMacOSProcess(pid) {
     const match = output.trim().match(/^(\d+)\s+(.+)$/s);
     if (!match)
       return;
-    return { pid, ppid: Number(match[1]), command: match[2] };
+    return {
+      pid,
+      ppid: Number(match[1]),
+      uid: await processUID(pid),
+      command: match[2]
+    };
   } catch {
     return;
   }
+}
+async function listMacOSProcesses() {
+  const output = await execFileText2("/bin/ps", [
+    "-axo",
+    "pid=,ppid=,uid=,command="
+  ]);
+  return output.split(`
+`).flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/s);
+    return match ? [
+      {
+        pid: Number(match[1]),
+        ppid: Number(match[2]),
+        uid: Number(match[3]),
+        command: match[4]
+      }
+    ] : [];
+  });
+}
+async function processUID(pid) {
+  const output = await execFileText2("/bin/ps", ["-p", String(pid), "-o", "uid="]);
+  const uid = Number(output.trim());
+  return Number.isInteger(uid) ? uid : undefined;
 }
 function execFileText2(file, args) {
   return new Promise((resolve, reject) => {
@@ -379,10 +429,14 @@ function execFileText2(file, args) {
 async function attachDesktopExtension(extension, options = {}) {
   const log = options.log ?? ((message) => console.error(`[ocdx-live] ${message}`));
   if (process.env.OPENCODE_CLIENT !== "desktop") {
-    return { status: "skipped", reason: "OPENCODE_CLIENT is not desktop" };
+    const reason = "OPENCODE_CLIENT is not desktop";
+    log(reason);
+    return { status: "skipped", reason };
   }
   if (process.platform !== "darwin") {
-    return { status: "skipped", reason: "live attach currently supports macOS only" };
+    const reason = "live attach currently supports macOS only";
+    log(reason);
+    return { status: "skipped", reason };
   }
   if (!extension.id || !extension.source) {
     return { status: "failed", reason: "extension id and source are required" };
@@ -390,7 +444,10 @@ async function attachDesktopExtension(extension, options = {}) {
   try {
     const target = await findOpenCodeDesktopMain();
     if (!target) {
-      throw new Error("OpenCode Desktop Electron main process was not found in the plugin ancestry");
+      throw new Error("OpenCode Desktop Electron main process was not uniquely identified");
+    }
+    if (!await verifyOpenCodeDesktopBundle(target)) {
+      throw new Error("OpenCode Desktop process failed app bundle verification");
     }
     let inspector = await discoverInspector(target.pid);
     const openedInspector = !inspector;
