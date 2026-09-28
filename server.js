@@ -492,10 +492,21 @@ async function attachDesktopExtension(extension, options = {}) {
 }
 
 // examples/live-plugin/server.ts
-async function bootstrap() {
+var pending;
+function bootstrap() {
+  pending ??= run().finally(() => {
+    setTimeout(() => {
+      pending = undefined;
+    }, 1000);
+  });
+  return pending;
+}
+async function run() {
   const source = await readFile2(new URL("./desktop.js", import.meta.url), "utf8");
   const runtimeSource = await readFile2(new URL("./runtime.js", import.meta.url), "utf8");
-  await attachDesktopExtension({ id: "live-attach-demo", source }, { runtimeSource });
+  const result = await attachDesktopExtension({ id: "live-attach-demo", source }, { runtimeSource });
+  if (result.status === "failed")
+    throw new Error(result.reason);
 }
 var server_default = {
   id: "ocdx-live-demo",
