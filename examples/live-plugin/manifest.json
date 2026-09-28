@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "live-attach-demo",
+  "name": "Live Attach Demo",
+  "version": "0.1.0",
+  "entry": "desktop.js"
+}

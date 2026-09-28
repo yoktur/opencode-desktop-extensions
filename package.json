@@ -28,6 +28,9 @@
     "dist/index.js",
     "dist/main.d.ts",
     "dist/main.js",
+    "dist/live",
+    "dist/live.js",
+    "dist/runtime.js",
     "dist/solid.d.ts",
     "dist/solid.js",
     "dist/types.d.ts",
@@ -48,6 +51,10 @@
       "types": "./dist/main.d.ts",
       "import": "./dist/main.js"
     },
+    "./live": {
+      "types": "./dist/live/index.d.ts",
+      "import": "./dist/live.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -56,7 +63,7 @@
     "launch": "bun run script/launch.ts",
     "prepublishOnly": "bun run typecheck && bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/channel.test.cjs && playwright test"
+    "test": "bun test test/live-process.test.ts test/live-host.test.ts && node --test test/channel.test.cjs && playwright test"
   },
   "peerDependencies": {
     "@opencode-ai/client": "0.0.0-beta-19271",

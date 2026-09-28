@@ -1,5 +1,5 @@
 import { BlobReader, BlobWriter, TextReader, ZipWriter } from "@zip.js/zip.js";
-import { mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { build } from "vite";
 import solid from "vite-plugin-solid";
@@ -27,13 +27,14 @@ await build({
     lib: {
       entry: {
         index: "src/index.ts",
+        live: "src/live/index.ts",
         main: "src/main.ts",
         solid: "src/solid.tsx",
       },
       formats: ["es"],
     },
     rollupOptions: {
-      external: ["solid-js", "solid-js/web"],
+      external: ["solid-js", "solid-js/web", /^node:/],
     },
   },
 });
@@ -46,6 +47,7 @@ await buildExtension("builtin/extension-manager", [], "dist/builtin");
 await buildExtension("examples/subway-surfers", ["assets/subway-surfers.webm"]);
 await buildExtension("examples/vertical-tabs", []);
 await buildExtension("examples/keep-awake", []);
+await buildLivePlugin();
 await rm("dist/.entries", { recursive: true, force: true });
 
 async function buildExtension(
@@ -176,4 +178,29 @@ async function bundleMainExtension(
     throw new Error(`Vite did not bundle the main entry for ${manifest.id}`);
   }
   return main.code;
+}
+
+async function buildLivePlugin() {
+  const directory = "examples/live-plugin";
+  const manifest = await Bun.file(`${directory}/manifest.json`).json();
+  const output = "dist/live-plugin";
+  await mkdir(output, { recursive: true });
+  await Bun.write(
+    `${output}/desktop.js`,
+    await bundleExtension(directory, manifest),
+  );
+
+  const server = await Bun.build({
+    entrypoints: [`${directory}/server.ts`],
+    target: "bun",
+    format: "esm",
+    external: ["electron"],
+  });
+  if (!server.success) {
+    throw new Error("Could not bundle the live demo server plugin");
+  }
+  await Bun.write(`${output}/server.js`, server.outputs[0]);
+  await copyFile("dist/runtime.js", `${output}/runtime.js`);
+  await copyFile(`${directory}/package.json`, `${output}/package.json`);
+  await copyFile(`${directory}/README.md`, `${output}/README.md`);
 }
