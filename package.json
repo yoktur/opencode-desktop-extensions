@@ -63,7 +63,7 @@
     "launch": "bun run script/launch.ts",
     "prepublishOnly": "bun run typecheck && bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun test test/live-process.test.ts test/live-host.test.ts && node --test test/channel.test.cjs && playwright test"
+    "test": "bun test test/live-process.test.ts test/live-host.test.ts test/live-demo.test.ts && node --test test/channel.test.cjs && playwright test"
   },
   "peerDependencies": {
     "@opencode-ai/client": "0.0.0-beta-19271",
