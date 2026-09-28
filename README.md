@@ -2,6 +2,11 @@
 
 OCDX is a typed SDK and mod loader for extending the production OpenCode Desktop V2 interface without patching the installed app.
 
+An experimental macOS [live-attach proof of concept](./docs/live-attach-poc.md)
+also lets a normal OpenCode server plugin add an OCDX renderer contribution to
+an already-running normal Desktop process. It is an additive backend; the
+Electron-Hook launcher and isolated OCDX channel remain the primary mode.
+
 https://github.com/user-attachments/assets/b3a3bb6b-0c29-4d10-8f3e-bc8941aa9b59
 
 ```ts
