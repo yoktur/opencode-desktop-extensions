@@ -138,8 +138,11 @@ Remove the demo with the same configured package spec:
 opencode plugin remove github:yoktur/opencode-desktop-extensions#live-demo-package
 ```
 
-Installing a plugin into an already-running server is outside this PoC. Quit
-and reopen normal Desktop after adding or removing it.
+The demo also attaches when the persistent Desktop service is already running:
+OpenCode reloads its plugin configuration, the server entry registers with the
+existing main-process host, and current renderer windows are updated. After
+removal, quit and reopen normal Desktop to clear the process-local UI
+registration.
 
 ## Security
 
