@@ -1,0 +1,17 @@
+{
+  "name": "@hona/ocdx-live-demo",
+  "version": "0.1.0",
+  "description": "Normal OpenCode plugin demonstrating automatic OCDX live attach",
+  "type": "module",
+  "main": "./server.js",
+  "exports": {
+    ".": "./server.js",
+    "./server": "./server.js"
+  },
+  "files": [
+    "server.js",
+    "desktop.js",
+    "runtime.js",
+    "README.md"
+  ]
+}
